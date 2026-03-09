@@ -16,6 +16,7 @@ from pathlib import Path
 from gc9a01 import GC9A01, WIDTH, HEIGHT
 from config import (
     RECORDINGS_DIR,
+    AUDIO_CARD_INDEX,
     PERSON_INTERVAL,
     MOTION_COOLDOWN,
     DETECTION_EVENT_COOLDOWN,
@@ -100,7 +101,7 @@ class Robot:
         for control, value in controls:
             try:
                 result = subprocess.run(
-                    ["amixer", "-c", "0", "-q", "set", control, value],
+                    ["amixer", "-c", str(AUDIO_CARD_INDEX), "-q", "set", control, value],
                     capture_output=True,
                     text=True,
                     timeout=4,

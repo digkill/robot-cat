@@ -11,10 +11,12 @@ import threading
 try:
     from config import (
         AUDIO_DEVICE,
+        AUDIO_CARD_INDEX,
         TTS_PROVIDER,
         TTS_VOICE,
         TTS_SPEED,
         TTS_VOLUME,
+        TTS_GAIN,
         TTS_OPENAI_MODEL,
         TTS_OPENAI_VOICE,
         LLM_API_KEY,
@@ -23,10 +25,12 @@ try:
     )
 except ImportError:
     AUDIO_DEVICE = ""
+    AUDIO_CARD_INDEX = 0
     TTS_PROVIDER = "openai"
     TTS_VOICE = "ru"
     TTS_SPEED = 120
     TTS_VOLUME = 200
+    TTS_GAIN = 2.5
     TTS_OPENAI_MODEL = "gpt-4o-mini-tts"
     TTS_OPENAI_VOICE = "alloy"
     LLM_API_KEY = ""
@@ -90,12 +94,33 @@ def _get_audio_device():
     return AUDIO_DEVICE or "default"
 
 
-def _play_wav(path: str, timeout=30):
+def _play_wav(path: str, timeout=30, gain: float = 1.0):
     """Воспроизвести WAV через PipeWire, с fallback на aplay."""
     _ensure_max_playback_volume()
-    if shutil.which("pw-play"):
-        return _run_audio(["pw-play", path], timeout=timeout)
-    return _run_audio(["aplay", "-q", "-D", _get_audio_device(), path], timeout=timeout)
+    play_path = path
+    boosted_path = None
+    try:
+        if gain > 1.01 and shutil.which("ffmpeg"):
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                boosted_path = f.name
+            conv = subprocess.run(
+                ["ffmpeg", "-y", "-i", path, "-af", f"volume={gain}", boosted_path],
+                capture_output=True,
+                timeout=min(timeout, 20),
+            )
+            if conv.returncode == 0 and os.path.exists(boosted_path):
+                play_path = boosted_path
+            elif conv.stderr:
+                _log(f"ffmpeg gain: {conv.stderr.decode(errors='ignore').strip()[:160]}")
+        if shutil.which("pw-play"):
+            return _run_audio(["pw-play", play_path], timeout=timeout)
+        return _run_audio(["aplay", "-q", "-D", _get_audio_device(), play_path], timeout=timeout)
+    finally:
+        if boosted_path and os.path.exists(boosted_path):
+            try:
+                os.unlink(boosted_path)
+            except Exception:
+                pass
 
 
 def _ensure_max_playback_volume():
@@ -105,7 +130,7 @@ def _ensure_max_playback_volume():
     for control in ("Headphone", "Speaker", "Playback"):
         try:
             subprocess.run(
-                ["amixer", "-c", "0", "-q", "set", control, "100%"],
+                ["amixer", "-c", str(AUDIO_CARD_INDEX), "-q", "set", control, "100%"],
                 capture_output=True,
                 timeout=3,
             )
@@ -120,6 +145,7 @@ def get_voice_settings():
         "voice": TTS_VOICE,
         "speed": max(80, min(260, int(TTS_SPEED))),
         "volume": max(0, min(200, int(TTS_VOLUME))),
+        "gain": max(0.5, min(5.0, float(TTS_GAIN))),
         "openai_model": TTS_OPENAI_MODEL,
         "openai_voice": TTS_OPENAI_VOICE,
     }
@@ -174,7 +200,7 @@ def _speak_openai(text: str, settings: dict) -> bool:
             response_format="wav",
         ) as response:
             response.stream_to_file(wav_path)
-        result = _play_wav(wav_path, timeout=45)
+        result = _play_wav(wav_path, timeout=45, gain=settings["gain"])
         if result.returncode == 0:
             return True
         stderr = result.stderr.decode(errors="ignore").strip()
@@ -242,7 +268,7 @@ def speak(text: str, blocking: bool = False):
                                 os.unlink(wav_path)
                             wav_path = None
                             continue
-                        result = _play_wav(wav_path, timeout=30)
+                        result = _play_wav(wav_path, timeout=30, gain=settings["gain"])
                         if result.returncode == 0:
                             played = True
                             break
@@ -274,7 +300,7 @@ def speak(text: str, blocking: bool = False):
                             timeout=15,
                         )
                         if conv.returncode == 0:
-                            result = _play_wav(wav_path, timeout=30)
+                            result = _play_wav(wav_path, timeout=30, gain=settings["gain"])
                             played = result.returncode == 0
                             if not played and result.stderr:
                                 _log(f"playback: {result.stderr.decode(errors='ignore').strip()[:160]}")
