@@ -54,6 +54,8 @@ BUTTON_ACTIVE_LOW = os.environ.get("BUTTON_ACTIVE_LOW", "true").lower() == "true
 
 # Запись при движении
 MOTION_RECORD_SEC = int(os.environ.get("MOTION_RECORD_SEC", "5"))
+MOTION_GREETING_ENABLED = os.environ.get("MOTION_GREETING_ENABLED", "true").lower() == "true"
+MOTION_GREETING_TEXT = os.environ.get("MOTION_GREETING_TEXT", "Привет! Как дела?").strip() or "Привет! Как дела?"
 
 # Камера для детекции: opencv (V4L2) или picamera2 (CSI)
 CAMERA_DETECTION = os.environ.get("CAMERA_DETECTION", "opencv")

@@ -17,6 +17,8 @@ from gc9a01 import GC9A01, WIDTH, HEIGHT
 from config import (
     RECORDINGS_DIR,
     MOTION_RECORD_SEC,
+    MOTION_GREETING_ENABLED,
+    MOTION_GREETING_TEXT,
     PERSON_INTERVAL,
     MOTION_COOLDOWN,
     LISTEN_DURATION,
@@ -191,6 +193,14 @@ class Robot:
         path = None
         try:
             time.sleep(1.5)
+            if MOTION_GREETING_ENABLED:
+                greeting = MOTION_GREETING_TEXT or get_greeting() or "Привет! Как дела?"
+                log("motion_greeting", greeting)
+                self.face.set_speaking(True)
+                log("face", "режим говорения")
+                speak(greeting, blocking=True)
+                self.face.set_speaking(False)
+                log("face", "режим idle")
             log("recorder", "старт записи видео")
             path = record_video(MOTION_RECORD_SEC)
             log("recorder", f"запись завершена: {path or 'ошибка'}")
