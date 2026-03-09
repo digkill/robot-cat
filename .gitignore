@@ -1,0 +1,34 @@
+.env
+.env.*
+!.env.example
+*.pyc
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+.python-version
+.venv/
+venv/
+env/
+
+# IDE / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Local outputs
+recordings/
+snapshots/
+logs/*.log
+logs/*.log.*
+
+# Runtime media artifacts
+recordings/*.mp4
+recordings/*.webm
+recordings/*.wav
+recordings/*.mp3
+snapshots/*.jpg
+snapshots/*.jpeg
+snapshots/*.png

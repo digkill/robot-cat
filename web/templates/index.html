@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Робот — панель управления</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>🤖 Робот — панель управления</h1>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>📋 События <span id="stateBadge"></span></h2>
+      <div id="events" class="events-list"></div>
+      <button onclick="loadEvents()">Обновить</button>
+    </section>
+    <section class="card">
+      <h2>📜 Лог (watchlog)</h2>
+      <pre id="watchlog" class="watchlog"></pre>
+      <button onclick="loadLog()">Обновить</button>
+    </section>
+
+    <section class="card">
+      <h2>📹 Записи с камеры</h2>
+      <div id="recordings" class="recordings-grid"></div>
+      <button onclick="loadRecordings()">Обновить</button>
+    </section>
+
+    <section class="card">
+      <h2>📷 Снимки</h2>
+      <div id="snapshots" class="snapshots-grid"></div>
+      <button onclick="loadSnapshots()">Обновить</button>
+    </section>
+
+    <section class="card">
+      <h2>🎤 Голосовой ассистент</h2>
+      <div class="assistant">
+        <input type="text" id="assistantInput" placeholder="Напишите сообщение..." />
+        <button onclick="sendToAssistant()">Отправить</button>
+      </div>
+      <div class="assistant-voice">
+        <button id="recordBtn">🎙️ Записать голос</button>
+        <span id="recordStatus"></span>
+      </div>
+      <div id="assistantReply" class="reply"></div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

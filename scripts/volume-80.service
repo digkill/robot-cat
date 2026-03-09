@@ -1,0 +1,11 @@
+[Unit]
+Description=Установить громкость 100%
+After=sound.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -lc 'sleep 4; /home/mini/gc9a01_rpi/scripts/set_volume_80.sh'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
