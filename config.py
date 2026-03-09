@@ -59,6 +59,7 @@ CAMERA_DETECTION = os.environ.get("CAMERA_DETECTION", "opencv")
 # Интервал проверки человека (сек), пауза после движения (сек)
 PERSON_INTERVAL = float(os.environ.get("PERSON_INTERVAL", "8"))
 MOTION_COOLDOWN = float(os.environ.get("MOTION_COOLDOWN", "5"))
+DETECTION_EVENT_COOLDOWN = float(os.environ.get("DETECTION_EVENT_COOLDOWN", "30"))
 
 # Звук: пусто = default (через PipeWire), иначе явно
 AUDIO_DEVICE = os.environ.get("AUDIO_DEVICE", "").strip()

@@ -18,6 +18,7 @@ from config import (
     RECORDINGS_DIR,
     PERSON_INTERVAL,
     MOTION_COOLDOWN,
+    DETECTION_EVENT_COOLDOWN,
     LISTEN_DURATION,
     LISTEN_MIN_TEXT,
     DISPLAY_BACKLIGHT_PIN,
@@ -53,6 +54,13 @@ class Robot:
         self._running = True
         self._cleanup_started = False
         self.wake_listener = None
+        self._last_detection_event_ts = 0.0
+
+    def _detection_event_allowed(self) -> bool:
+        return (time.monotonic() - self._last_detection_event_ts) >= DETECTION_EVENT_COOLDOWN
+
+    def _mark_detection_event(self):
+        self._last_detection_event_ts = time.monotonic()
 
     def _speak_startup_greeting(self):
         """Озвучить короткое приветствие при запуске робота."""
@@ -63,14 +71,21 @@ class Robot:
     def _speak_with_emotion(self, text: str, emotion: str = "радостный"):
         if not text:
             return
+        wakeword_was_paused = bool(self.wake_listener and getattr(self.wake_listener, "_paused", False))
+        if self.wake_listener and not wakeword_was_paused:
+            self._pause_wakeword()
         self.face.set_emotion(emotion)
         log("face", f"эмоция: {emotion}")
         self.face.set_speaking(True)
         log("face", "режим говорения")
-        speak(text, blocking=True)
-        self.face.set_speaking(False)
-        self.face.set_emotion("радостный")
-        log("face", "режим idle")
+        try:
+            speak(text, blocking=True)
+        finally:
+            self.face.set_speaking(False)
+            self.face.set_emotion("радостный")
+            if self.wake_listener and not wakeword_was_paused and self._running:
+                self._resume_wakeword()
+            log("face", "режим idle")
 
     def _restore_audio_levels(self):
         """Поднять уровни ALSA, если карта оказалась в тихом состоянии."""
@@ -96,12 +111,30 @@ class Robot:
                 log("audio", f"{control}: ошибка восстановления ({e})")
 
     def _on_person(self, event):
+        if not self._running:
+            return
+        if not self._action_queue.empty():
+            return
+        if get_state() != "idle":
+            return
+        if not self._detection_event_allowed():
+            return
+        self._mark_detection_event()
         self.events.append({"type": "person", "ts": event.timestamp})
         log("person_detected", f"человек в кадре (conf={event.confidence:.2f})")
         log("action_queue", "добавлено: person")
         self._action_queue.put(("person", event))
 
     def _on_motion(self, event):
+        if not self._running:
+            return
+        if not self._action_queue.empty():
+            return
+        if get_state() != "idle":
+            return
+        if not self._detection_event_allowed():
+            return
+        self._mark_detection_event()
         self.events.append({"type": "motion", "ts": event.timestamp})
         log("motion_detected", "движение в кадре")
         log("action_queue", "добавлено: motion")
