@@ -64,6 +64,7 @@ DETECTION_EVENT_COOLDOWN = float(os.environ.get("DETECTION_EVENT_COOLDOWN", "30"
 # Звук: пусто = default (через PipeWire), иначе явно
 AUDIO_DEVICE = os.environ.get("AUDIO_DEVICE", "").strip()
 AUDIO_CARD_INDEX = int(os.environ.get("AUDIO_CARD_INDEX", "0"))
+AUDIO_OUTPUT_VOLUME = max(0, min(100, int(os.environ.get("AUDIO_OUTPUT_VOLUME", "100"))))
 TTS_PROVIDER = os.environ.get("TTS_PROVIDER", "openai").strip().lower() or "openai"
 TTS_VOICE = os.environ.get("TTS_VOICE", "ru").strip() or "ru"
 TTS_SPEED = int(os.environ.get("TTS_SPEED", "120"))

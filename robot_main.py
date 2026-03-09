@@ -17,6 +17,7 @@ from gc9a01 import GC9A01, WIDTH, HEIGHT
 from config import (
     RECORDINGS_DIR,
     AUDIO_CARD_INDEX,
+    AUDIO_OUTPUT_VOLUME,
     PERSON_INTERVAL,
     MOTION_COOLDOWN,
     DETECTION_EVENT_COOLDOWN,
@@ -93,10 +94,11 @@ class Robot:
         if not shutil.which("amixer"):
             log("audio", "amixer не найден — пропуск восстановления громкости")
             return
+        volume = f"{AUDIO_OUTPUT_VOLUME}%"
         controls = [
-            ("Headphone", "100%"),
-            ("Speaker", "100%"),
-            ("Playback", "100%"),
+            ("Headphone", volume),
+            ("Speaker", volume),
+            ("Playback", volume),
         ]
         for control, value in controls:
             try:

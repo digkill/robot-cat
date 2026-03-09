@@ -12,6 +12,7 @@ try:
     from config import (
         AUDIO_DEVICE,
         AUDIO_CARD_INDEX,
+        AUDIO_OUTPUT_VOLUME,
         TTS_PROVIDER,
         TTS_VOICE,
         TTS_SPEED,
@@ -26,6 +27,7 @@ try:
 except ImportError:
     AUDIO_DEVICE = ""
     AUDIO_CARD_INDEX = 0
+    AUDIO_OUTPUT_VOLUME = 100
     TTS_PROVIDER = "openai"
     TTS_VOICE = "ru"
     TTS_SPEED = 120
@@ -127,10 +129,11 @@ def _ensure_max_playback_volume():
     """Перед воспроизведением поднимаем аппаратную громкость на максимум."""
     if not shutil.which("amixer"):
         return
+    volume = f"{AUDIO_OUTPUT_VOLUME}%"
     for control in ("Headphone", "Speaker", "Playback"):
         try:
             subprocess.run(
-                ["amixer", "-c", str(AUDIO_CARD_INDEX), "-q", "set", control, "100%"],
+                ["amixer", "-c", str(AUDIO_CARD_INDEX), "-q", "set", control, volume],
                 capture_output=True,
                 timeout=3,
             )
