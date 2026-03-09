@@ -114,9 +114,12 @@ def _play_wav(path: str, timeout=30, gain: float = 1.0):
                 play_path = boosted_path
             elif conv.stderr:
                 _log(f"ffmpeg gain: {conv.stderr.decode(errors='ignore').strip()[:160]}")
+        # aplay более предсказуем для явного ALSA-устройства и внешних звуковых карт.
+        if shutil.which("aplay"):
+            return _run_audio(["aplay", "-q", "-D", _get_audio_device(), play_path], timeout=timeout)
         if shutil.which("pw-play"):
             return _run_audio(["pw-play", play_path], timeout=timeout)
-        return _run_audio(["aplay", "-q", "-D", _get_audio_device(), play_path], timeout=timeout)
+        return subprocess.CompletedProcess(["playback"], 1, stdout=b"", stderr="aplay and pw-play not found".encode())
     finally:
         if boosted_path and os.path.exists(boosted_path):
             try:
