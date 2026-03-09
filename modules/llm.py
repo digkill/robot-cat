@@ -66,12 +66,94 @@ CHARACTERS = {
     },
 }
 
+EMOTIONS = (
+    "веселый",
+    "радостный",
+    "грустный",
+    "злой",
+    "задумчивый",
+    "стесняется",
+    "влюбленный",
+    "праздничный",
+)
+
 
 def get_character_settings():
     key = (ASSISTANT_CHARACTER or "robot_cat").strip().lower()
     settings = CHARACTERS.get(key, CHARACTERS["robot_cat"]).copy()
     settings["id"] = key if key in CHARACTERS else "robot_cat"
     return settings
+
+
+def _normalize_emotion(value: str, default: str = "радостный") -> str:
+    value = (value or "").strip().lower()
+    aliases = {
+        "happy": "радостный",
+        "joyful": "радостный",
+        "funny": "веселый",
+        "angry": "злой",
+        "sad": "грустный",
+        "thoughtful": "задумчивый",
+        "shy": "стесняется",
+        "love": "влюбленный",
+        "loving": "влюбленный",
+        "festive": "праздничный",
+    }
+    value = aliases.get(value, value)
+    return value if value in EMOTIONS else default
+
+
+def _strip_code_fences(text: str) -> str:
+    text = (text or "").strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if len(lines) >= 3:
+            text = "\n".join(lines[1:-1]).strip()
+    return text
+
+
+def _parse_emotional_response(raw: str, default_emotion: str) -> tuple[str, str]:
+    raw = _strip_code_fences(raw)
+    if not raw:
+        return "", default_emotion
+    try:
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            text = (data.get("text") or "").strip()
+            emotion = _normalize_emotion(data.get("emotion"), default_emotion)
+            if text:
+                return text, emotion
+    except Exception:
+        pass
+    return raw.strip(), default_emotion
+
+
+def _emotion_json_instruction(task: str, default_emotion: str) -> str:
+    allowed = ", ".join(EMOTIONS)
+    return (
+        f"{task} Верни строго JSON без Markdown в формате "
+        f'{{"text":"...", "emotion":"..."}}. '
+        f"emotion должен быть одним из: {allowed}. "
+        f"Если не уверен, используй {default_emotion}."
+    )
+
+
+def _call_console_emotional(task: str, default_emotion: str) -> tuple[str, str]:
+    raw = _call_console(_persona_prompt(_emotion_json_instruction(task, default_emotion)))
+    return _parse_emotional_response(raw, default_emotion)
+
+
+def _call_openai_emotional(
+    task: str,
+    user_message: str,
+    default_emotion: str = "радостный",
+    max_tokens: int = 120,
+) -> tuple[str, str]:
+    raw = _call_openai([
+        {"role": "system", "content": _persona_prompt(_emotion_json_instruction(task, default_emotion))},
+        {"role": "user", "content": user_message},
+    ], max_tokens=max_tokens)
+    return _parse_emotional_response(raw, default_emotion)
 
 
 def _persona_prompt(task: str) -> str:
@@ -169,40 +251,79 @@ def _call_openai(messages: list, max_tokens: int = 150) -> str:
 
 def get_joke() -> str:
     """Получить короткую добрую шутку через OpenAI."""
+    text, _ = get_joke_with_emotion()
+    return text
+
+
+def get_joke_with_emotion() -> tuple[str, str]:
+    """Шутка и эмоция для лица."""
     if LLM_CONSOLE_URL:
-        return _call_console(_persona_prompt("Расскажи одну короткую добрую шутку на русском."))
-    return _call_openai([
-        {"role": "system", "content": _persona_prompt("Отвечай только одной короткой доброй шуткой на русском, без лишнего текста.")},
-        {"role": "user", "content": "Расскажи добрую шутку."},
-    ], max_tokens=100)
+        return _call_console_emotional("Расскажи одну короткую добрую шутку на русском.", "веселый")
+    return _call_openai_emotional(
+        "Расскажи одну короткую добрую шутку на русском.",
+        "Расскажи добрую шутку.",
+        default_emotion="веселый",
+        max_tokens=120,
+    )
 
 
 def get_greeting() -> str:
     """Приветствие при обнаружении человека через OpenAI."""
+    text, _ = get_greeting_with_emotion()
+    return text
+
+
+def get_greeting_with_emotion() -> tuple[str, str]:
+    """Приветствие и эмоция для лица."""
     if LLM_CONSOLE_URL:
-        return _call_console(_persona_prompt("Поздоровайся с человеком одним коротким приветствием."))
-    return _call_openai([
-        {"role": "system", "content": _persona_prompt("Ответь одним коротким приветствием на русском.")},
-        {"role": "user", "content": "Поздоровайся с человеком."},
-    ], max_tokens=50)
+        return _call_console_emotional("Поздоровайся с человеком одним коротким приветствием.", "радостный")
+    return _call_openai_emotional(
+        "Ответь одним коротким приветствием на русском.",
+        "Поздоровайся с человеком.",
+        default_emotion="радостный",
+        max_tokens=80,
+    )
 
 
 def get_how_are_you_response() -> str:
     """Ответ на вопрос 'как дела' через OpenAI."""
+    text, _ = get_how_are_you_response_with_emotion()
+    return text
+
+
+def get_how_are_you_response_with_emotion() -> tuple[str, str]:
+    """Ответ на вопрос и эмоция для лица."""
     if LLM_CONSOLE_URL:
-        return _call_console(_persona_prompt("Ответь коротко и дружелюбно на вопрос 'как дела?'"))
-    return _call_openai([
-        {"role": "system", "content": _persona_prompt("Ответь коротко и дружелюбно на вопрос как дела, на русском.")},
-        {"role": "user", "content": "Как дела?"},
-    ], max_tokens=80)
+        return _call_console_emotional("Ответь коротко и дружелюбно на вопрос 'как дела?'", "задумчивый")
+    return _call_openai_emotional(
+        "Ответь коротко и дружелюбно на вопрос как дела, на русском.",
+        "Как дела?",
+        default_emotion="задумчивый",
+        max_tokens=100,
+    )
 
 
 def chat(user_message: str, history: list = None) -> str:
     """Диалог с ассистентом через OpenAI."""
+    text, _ = chat_with_emotion(user_message, history)
+    return text
+
+
+def chat_with_emotion(user_message: str, history: list = None) -> tuple[str, str]:
+    """Диалог с ассистентом и эмоция для лица."""
     if LLM_CONSOLE_URL:
-        return _call_console(_persona_prompt(f"Ответь на сообщение пользователя: {user_message}"))
+        return _call_console_emotional(f"Ответь на сообщение пользователя: {user_message}", "радостный")
     history = history or []
-    messages = [{"role": "system", "content": _persona_prompt("Ты голосовой ассистент робота. Отвечай кратко и по делу на русском.")}]
+    messages = [{
+        "role": "system",
+        "content": _persona_prompt(
+            _emotion_json_instruction(
+                "Ты голосовой ассистент робота. Отвечай кратко и по делу на русском.",
+                "радостный",
+            )
+        ),
+    }]
     messages.extend(history[-10:])
     messages.append({"role": "user", "content": user_message})
-    return _call_openai(messages, max_tokens=200)
+    raw = _call_openai(messages, max_tokens=220)
+    return _parse_emotional_response(raw, "радостный")

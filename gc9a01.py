@@ -68,7 +68,8 @@ class GC9A01:
         self._cs_kernel = (spi_device == 0 and cs == 8) or (spi_device == 1 and cs == 7)
         self._spi = spidev.SpiDev()
         self._spi.open(spi_bus, spi_device)
-        self._spi.max_speed_hz = 32_000_000
+        # Чуть ниже пикового значения: на Pi это обычно стабильнее и заметно меньше рябит.
+        self._spi.max_speed_hz = 24_000_000
         self._spi.mode = 0
 
         GPIO.setwarnings(False)
@@ -140,7 +141,10 @@ class GC9A01:
 
     def _write_pixels(self, data):
         """Отправить байты пикселей (CS уже LOW, DC=DATA после _start_ram_write)."""
-        self._spi.writebytes(data)
+        if hasattr(self._spi, "writebytes2"):
+            self._spi.writebytes2(data)
+        else:
+            self._spi.writebytes(list(data))
 
     def _end_ram_write(self):
         if not self._cs_kernel:
@@ -169,6 +173,22 @@ class GC9A01:
         chunk = 4096
         for i in range(0, len(buf), chunk):
             self._write_pixels(buf[i:i + chunk])
+        self._end_ram_write()
+
+    def blit_buffer(self, x, y, w, h, data):
+        """Вывести готовый RGB565-буфер в прямоугольник."""
+        if w <= 0 or h <= 0:
+            return
+        if x < 0 or y < 0 or x + w > WIDTH or y + h > HEIGHT:
+            return
+        expected_size = w * h * 2
+        if len(data) != expected_size:
+            raise ValueError(f"invalid RGB565 buffer size: expected {expected_size}, got {len(data)}")
+        self.set_window(x, y, x + w - 1, y + h - 1)
+        self._start_ram_write()
+        chunk = 8192
+        for i in range(0, len(data), chunk):
+            self._write_pixels(data[i:i + chunk])
         self._end_ram_write()
 
     def pixel(self, x, y, color):

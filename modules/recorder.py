@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Запись видео и серия снимков при движении."""
 
+import cv2
 import subprocess
 import shutil
 import threading
@@ -124,6 +125,23 @@ def capture_motion_snapshots(
         if index < count - 1:
             time.sleep(interval_sec)
     return paths
+
+
+def save_detection_snapshot(frame, is_rgb: bool = False, prefix: str = "motion") -> Path | None:
+    """Сохранить кадр детектора как один JPEG-снимок."""
+    if frame is None:
+        return None
+    SNAPSHOTS_DIR.mkdir(exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    path = SNAPSHOTS_DIR / f"{prefix}_{ts}.jpg"
+    try:
+        save_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR) if is_rgb else frame
+        if cv2.imwrite(str(path), save_frame):
+            _log("recorder", f"снимок сохранен: {path.name}")
+            return path
+    except Exception as e:
+        _log("recorder", f"снимок ошибка: {e}")
+    return None
 
 
 def record_audio(duration_sec: int = 10, output_path: str = None) -> Path | None:

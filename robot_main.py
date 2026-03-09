@@ -16,9 +16,6 @@ from pathlib import Path
 from gc9a01 import GC9A01, WIDTH, HEIGHT
 from config import (
     RECORDINGS_DIR,
-    MOTION_RECORD_SEC,
-    MOTION_GREETING_ENABLED,
-    MOTION_GREETING_TEXT,
     PERSON_INTERVAL,
     MOTION_COOLDOWN,
     LISTEN_DURATION,
@@ -29,8 +26,14 @@ from config import (
 )
 
 from modules.detection import PersonMotionDetector, EventType
-from modules.recorder import capture_motion_snapshots
-from modules.llm import get_joke, get_greeting, get_how_are_you_response, chat, get_character_settings
+from modules.recorder import save_detection_snapshot
+from modules.llm import (
+    chat_with_emotion,
+    get_character_settings,
+    get_greeting_with_emotion,
+    get_how_are_you_response_with_emotion,
+    get_joke_with_emotion,
+)
 from modules.tts import speak
 from modules.speech import listen
 from modules.display_face import FaceAnimator, draw_face
@@ -55,10 +58,18 @@ class Robot:
         """Озвучить короткое приветствие при запуске робота."""
         phrase = get_character_settings().get("startup", "Привет! Я робот и уже готов к работе.")
         log("startup_greeting", phrase)
+        self._speak_with_emotion(phrase, "радостный")
+
+    def _speak_with_emotion(self, text: str, emotion: str = "радостный"):
+        if not text:
+            return
+        self.face.set_emotion(emotion)
+        log("face", f"эмоция: {emotion}")
         self.face.set_speaking(True)
         log("face", "режим говорения")
-        speak(phrase, blocking=True)
+        speak(text, blocking=True)
         self.face.set_speaking(False)
+        self.face.set_emotion("радостный")
         log("face", "режим idle")
 
     def _restore_audio_levels(self):
@@ -120,27 +131,26 @@ class Robot:
     def _process_person(self):
         set_state("greeting")
         log("greeting_start", "приветствие человека — запуск LLM и TTS")
-        self.face.set_speaking(True)
-        log("face", "режим говорения")
-        greeting = get_greeting() or "Привет! Рад тебя видеть!"
+        greeting, greeting_emotion = get_greeting_with_emotion()
+        greeting = greeting or "Привет! Рад тебя видеть!"
         log("llm", f"приветствие: {greeting[:60]}...")
         log("tts", f"озвучивание: {greeting[:60]}...")
-        speak(greeting, blocking=True)
+        self._speak_with_emotion(greeting, greeting_emotion)
         log("tts", "приветствие озвучено")
         time.sleep(0.5)
-        how = get_how_are_you_response() or "Как дела?"
+        how, how_emotion = get_how_are_you_response_with_emotion()
+        how = how or "Как дела?"
         log("llm", f"вопрос: {how[:60]}...")
         log("tts", f"озвучивание: {how[:60]}...")
-        speak(how, blocking=True)
+        self._speak_with_emotion(how, how_emotion)
         log("tts", "вопрос озвучен")
         time.sleep(0.3)
-        joke = get_joke() or "Почему роботы не боятся призраков? Потому что у них железные нервы!"
+        joke, joke_emotion = get_joke_with_emotion()
+        joke = joke or "Почему роботы не боятся призраков? Потому что у них железные нервы!"
         log("llm", f"шутка: {joke[:60]}...")
         log("tts", f"озвучивание шутки: {joke[:60]}...")
-        speak(joke, blocking=True)
+        self._speak_with_emotion(joke, joke_emotion)
         log("tts", "шутка озвучена")
-        self.face.set_speaking(False)
-        log("face", "режим idle")
         log("greeting_done", "приветствие завершено")
         self._listen_and_respond()
 
@@ -164,12 +174,10 @@ class Robot:
             if text and len(text.strip()) >= LISTEN_MIN_TEXT:
                 log("speech", f"распознано: {text[:60]}...")
                 set_state("responding")
-                reply = chat(text)
+                reply, reply_emotion = chat_with_emotion(text)
                 if reply:
                     log("llm", f"ответ: {reply[:60]}...")
-                    self.face.set_speaking(True)
-                    speak(reply, blocking=True)
-                    self.face.set_speaking(False)
+                    self._speak_with_emotion(reply, reply_emotion)
                     log("listening", "ответ озвучен")
             else:
                 log("listening", "тишина — молчу")
@@ -182,37 +190,19 @@ class Robot:
         log("wake_word", "фраза пробуждения сработала — переход в диалог")
         self._listen_and_respond()
 
-    def _process_motion(self):
-        set_state("recording")
-        log("recording_start", f"серия снимков при движении: 1 кадр/сек, {MOTION_RECORD_SEC} сек")
-        log("wake_word", "пауза wake word на время записи")
-        self._pause_wakeword()
-        log("camera", "пауза детектора для записи")
-        self.detector.pause()
-        paths = []
-        try:
-            time.sleep(1.5)
-            if MOTION_GREETING_ENABLED:
-                greeting = MOTION_GREETING_TEXT or get_greeting() or "Привет! Как дела?"
-                log("motion_greeting", greeting)
-                self.face.set_speaking(True)
-                log("face", "режим говорения")
-                speak(greeting, blocking=True)
-                self.face.set_speaking(False)
-                log("face", "режим idle")
-            log("recorder", "старт серии снимков")
-            paths = capture_motion_snapshots(MOTION_RECORD_SEC, interval_sec=1.0)
-            log("recorder", f"серия снимков завершена: {len(paths)} шт.")
-        finally:
-            log("camera", "возобновление детектора")
-            self.detector.resume()
-            log("wake_word", "возобновление wake word после записи")
-            self._resume_wakeword()
-        if paths:
-            self.events.append({"type": "motion_captured", "count": len(paths), "files": [str(p) for p in paths]})
-            log("recording_saved", ", ".join(path.name for path in paths))
+    def _process_motion(self, event):
+        set_state("snapshot")
+        log("recording_start", "снимок при движении: 1 кадр")
+        path = save_detection_snapshot(
+            event.frame if event else None,
+            is_rgb=getattr(self.detector, "_use_picam", False),
+            prefix="motion",
+        )
+        if path:
+            self.events.append({"type": "motion_captured", "file": str(path)})
+            log("recording_saved", path.name)
         else:
-            log("recording_failed", "не удалось сделать снимки")
+            log("recording_failed", "не удалось сохранить снимок")
         set_state("idle")
 
     def _worker(self):
@@ -224,8 +214,8 @@ class Robot:
                     log("worker", "обработка person — приветствие")
                     self._process_person()
                 elif action == "motion":
-                    log("worker", "обработка motion — запись")
-                    self._process_motion()
+                    log("worker", "обработка motion — снимок")
+                    self._process_motion(event)
                 elif action == "wake":
                     log("worker", "обработка wake — диалог")
                     self._process_wake()
