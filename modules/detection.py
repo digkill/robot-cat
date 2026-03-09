@@ -155,8 +155,15 @@ class PersonMotionDetector:
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         else:
             gray = frame
+        # Для CSI-камеры контраст часто "плоский", equalizeHist заметно улучшает Haar.
+        gray = cv2.equalizeHist(gray)
         if self._face_cascade is not None:
-            faces = self._face_cascade.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=4, minSize=(40, 40))
+            faces = self._face_cascade.detectMultiScale(
+                gray,
+                scaleFactor=1.03,
+                minNeighbors=3,
+                minSize=(32, 32),
+            )
             if len(faces) > 0:
                 return True, 0.8
         try:
@@ -193,9 +200,23 @@ class PersonMotionDetector:
                 time.sleep(0.1)
                 continue
             now = time.time()
+            person_found = False
 
-            # Движение
-            if self.motion_callback and (now - self._last_motion_time) >= self.motion_cooldown:
+            # Человек проверяем первым, чтобы лицо не терялось на фоне постоянного движения.
+            if self.person_callback and (now - self._last_person_time) >= self.person_interval:
+                found, conf = self._detect_person(frame)
+                if found:
+                    person_found = True
+                    self._last_person_time = now
+                    try:
+                        from modules.watchlog import log
+                        log("detection", f"человек обнаружен (conf={conf:.2f}) — вызов person_callback")
+                    except Exception:
+                        pass
+                    self.person_callback(DetectionEvent(EventType.PERSON, frame.copy(), now, conf))
+
+            # Движение отдельно, но не в тот же кадр, где уже нашли человека.
+            if (not person_found) and self.motion_callback and (now - self._last_motion_time) >= self.motion_cooldown:
                 if self._detect_motion(frame):
                     self._last_motion_time = now
                     try:
@@ -204,18 +225,6 @@ class PersonMotionDetector:
                     except Exception:
                         pass
                     self.motion_callback(DetectionEvent(EventType.MOTION, frame.copy(), now))
-
-            # Человек
-            if self.person_callback and (now - self._last_person_time) >= self.person_interval:
-                found, conf = self._detect_person(frame)
-                if found:
-                    self._last_person_time = now
-                    try:
-                        from modules.watchlog import log
-                        log("detection", f"человек обнаружен (conf={conf:.2f}) — вызов person_callback")
-                    except Exception:
-                        pass
-                    self.person_callback(DetectionEvent(EventType.PERSON, frame.copy(), now, conf))
 
             # Снимки
             if SNAPSHOT_INTERVAL > 0 and (now - self._last_snapshot_time) >= SNAPSHOT_INTERVAL:
