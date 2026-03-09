@@ -102,11 +102,12 @@ def _play_wav(path: str, timeout=30, gain: float = 1.0):
     play_path = path
     boosted_path = None
     try:
-        if gain > 1.01 and shutil.which("ffmpeg"):
+        effective_gain = max(0.05, gain * (max(0, min(100, AUDIO_OUTPUT_VOLUME)) / 100.0))
+        if abs(effective_gain - 1.0) > 0.01 and shutil.which("ffmpeg"):
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
                 boosted_path = f.name
             conv = subprocess.run(
-                ["ffmpeg", "-y", "-i", path, "-af", f"volume={gain}", boosted_path],
+                ["ffmpeg", "-y", "-i", path, "-af", f"volume={effective_gain}", boosted_path],
                 capture_output=True,
                 timeout=min(timeout, 20),
             )
@@ -114,9 +115,15 @@ def _play_wav(path: str, timeout=30, gain: float = 1.0):
                 play_path = boosted_path
             elif conv.stderr:
                 _log(f"ffmpeg gain: {conv.stderr.decode(errors='ignore').strip()[:160]}")
-        # aplay более предсказуем для явного ALSA-устройства и внешних звуковых карт.
+        # aplay более предсказуем для явного ALSA-устройства и внешних звуковых карт,
+        # но если устройство не настроено, откатываемся на pw-play.
         if shutil.which("aplay"):
-            return _run_audio(["aplay", "-q", "-D", _get_audio_device(), play_path], timeout=timeout)
+            result = _run_audio(["aplay", "-q", "-D", _get_audio_device(), play_path], timeout=timeout)
+            if result.returncode == 0:
+                return result
+            stderr = result.stderr.decode(errors="ignore").strip()
+            if stderr:
+                _log(f"aplay: {stderr[:160]}")
         if shutil.which("pw-play"):
             return _run_audio(["pw-play", play_path], timeout=timeout)
         return subprocess.CompletedProcess(["playback"], 1, stdout=b"", stderr="aplay and pw-play not found".encode())
@@ -129,14 +136,13 @@ def _play_wav(path: str, timeout=30, gain: float = 1.0):
 
 
 def _ensure_max_playback_volume():
-    """Перед воспроизведением поднимаем аппаратную громкость на максимум."""
+    """Перед воспроизведением поднимаем аппаратную громкость карты на максимум."""
     if not shutil.which("amixer"):
         return
-    volume = f"{AUDIO_OUTPUT_VOLUME}%"
     for control in ("Headphone", "Speaker", "Playback"):
         try:
             subprocess.run(
-                ["amixer", "-c", str(AUDIO_CARD_INDEX), "-q", "set", control, volume],
+                ["amixer", "-c", str(AUDIO_CARD_INDEX), "-q", "set", control, "100%"],
                 capture_output=True,
                 timeout=3,
             )
