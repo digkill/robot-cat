@@ -184,14 +184,21 @@ class Robot:
     def _process_motion(self):
         set_state("recording")
         log("recording_start", f"запись видео при движении ({MOTION_RECORD_SEC} сек)")
+        log("wake_word", "пауза wake word на время записи")
+        self._pause_wakeword()
         log("camera", "пауза детектора для записи")
         self.detector.pause()
-        time.sleep(1.5)
-        log("recorder", "старт записи видео")
-        path = record_video(MOTION_RECORD_SEC)
-        log("recorder", f"запись завершена: {path or 'ошибка'}")
-        log("camera", "возобновление детектора")
-        self.detector.resume()
+        path = None
+        try:
+            time.sleep(1.5)
+            log("recorder", "старт записи видео")
+            path = record_video(MOTION_RECORD_SEC)
+            log("recorder", f"запись завершена: {path or 'ошибка'}")
+        finally:
+            log("camera", "возобновление детектора")
+            self.detector.resume()
+            log("wake_word", "возобновление wake word после записи")
+            self._resume_wakeword()
         if path:
             log("s3", f"загрузка: {path}")
             s3_key = upload_file(path)

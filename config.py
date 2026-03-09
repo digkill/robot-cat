@@ -53,7 +53,7 @@ DISPLAY_BACKLIGHT_PIN = int(_backlight_pin) if _backlight_pin else None
 BUTTON_ACTIVE_LOW = os.environ.get("BUTTON_ACTIVE_LOW", "true").lower() == "true"
 
 # Запись при движении
-MOTION_RECORD_SEC = 30
+MOTION_RECORD_SEC = int(os.environ.get("MOTION_RECORD_SEC", "5"))
 
 # Камера для детекции: opencv (V4L2) или picamera2 (CSI)
 CAMERA_DETECTION = os.environ.get("CAMERA_DETECTION", "opencv")
