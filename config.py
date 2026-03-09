@@ -54,6 +54,7 @@ BUTTON_ACTIVE_LOW = os.environ.get("BUTTON_ACTIVE_LOW", "true").lower() == "true
 
 # Камера для детекции: opencv (V4L2) или picamera2 (CSI)
 CAMERA_DETECTION = os.environ.get("CAMERA_DETECTION", "opencv")
+CAMERA_INDEX = int(os.environ.get("CAMERA_INDEX", "0"))
 
 # Детекция: только локальный Python/OpenCV (Haar/HOG), без токенов
 # Интервал проверки человека (сек), пауза после движения (сек)

@@ -16,9 +16,10 @@ except ImportError:
     HAS_PICAMERA2 = False
 
 try:
-    from config import CAMERA_DETECTION, SNAPSHOTS_DIR, SNAPSHOT_INTERVAL
+    from config import CAMERA_DETECTION, CAMERA_INDEX, SNAPSHOTS_DIR, SNAPSHOT_INTERVAL
 except ImportError:
     CAMERA_DETECTION = "opencv"
+    CAMERA_INDEX = 0
     SNAPSHOTS_DIR = Path(__file__).parent.parent / "snapshots"
     SNAPSHOT_INTERVAL = 0
 
@@ -104,7 +105,7 @@ class PersonMotionDetector:
 
     def _init_camera(self):
         if CAMERA_DETECTION == "opencv":
-            self._cam = cv2.VideoCapture(0)
+            self._cam = cv2.VideoCapture(CAMERA_INDEX)
             if self._cam.isOpened():
                 self._cam.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
                 self._cam.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)

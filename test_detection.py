@@ -12,9 +12,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 try:
-    from config import CAMERA_DETECTION
+    from config import CAMERA_DETECTION, CAMERA_INDEX
 except ImportError:
     CAMERA_DETECTION = "opencv"
+    CAMERA_INDEX = 0
 
 try:
     from picamera2 import Picamera2
@@ -48,7 +49,7 @@ def main():
     cam = None
     use_picam = False
     if CAMERA_DETECTION == "opencv":
-        cam = cv2.VideoCapture(0)
+        cam = cv2.VideoCapture(CAMERA_INDEX)
         if cam.isOpened():
             cam.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
             cam.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
