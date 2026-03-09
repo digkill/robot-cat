@@ -206,25 +206,27 @@ class PersonMotionDetector:
             if self.person_callback and (now - self._last_person_time) >= self.person_interval:
                 found, conf = self._detect_person(frame)
                 if found:
-                    person_found = True
-                    self._last_person_time = now
-                    try:
-                        from modules.watchlog import log
-                        log("detection", f"человек обнаружен (conf={conf:.2f}) — вызов person_callback")
-                    except Exception:
-                        pass
-                    self.person_callback(DetectionEvent(EventType.PERSON, frame.copy(), now, conf))
+                    accepted = self.person_callback(DetectionEvent(EventType.PERSON, frame.copy(), now, conf))
+                    if accepted is not False:
+                        person_found = True
+                        self._last_person_time = now
+                        try:
+                            from modules.watchlog import log
+                            log("detection", f"человек обнаружен (conf={conf:.2f}) — вызов person_callback")
+                        except Exception:
+                            pass
 
             # Движение отдельно, но не в тот же кадр, где уже нашли человека.
             if (not person_found) and self.motion_callback and (now - self._last_motion_time) >= self.motion_cooldown:
                 if self._detect_motion(frame):
-                    self._last_motion_time = now
-                    try:
-                        from modules.watchlog import log
-                        log("detection", "движение обнаружено — вызов motion_callback")
-                    except Exception:
-                        pass
-                    self.motion_callback(DetectionEvent(EventType.MOTION, frame.copy(), now))
+                    accepted = self.motion_callback(DetectionEvent(EventType.MOTION, frame.copy(), now))
+                    if accepted is not False:
+                        self._last_motion_time = now
+                        try:
+                            from modules.watchlog import log
+                            log("detection", "движение обнаружено — вызов motion_callback")
+                        except Exception:
+                            pass
 
             # Снимки
             if SNAPSHOT_INTERVAL > 0 and (now - self._last_snapshot_time) >= SNAPSHOT_INTERVAL:

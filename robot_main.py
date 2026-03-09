@@ -112,33 +112,35 @@ class Robot:
 
     def _on_person(self, event):
         if not self._running:
-            return
+            return False
         if not self._action_queue.empty():
-            return
+            return False
         if get_state() != "idle":
-            return
+            return False
         if not self._detection_event_allowed():
-            return
+            return False
         self._mark_detection_event()
         self.events.append({"type": "person", "ts": event.timestamp})
         log("person_detected", f"человек в кадре (conf={event.confidence:.2f})")
         log("action_queue", "добавлено: person")
         self._action_queue.put(("person", event))
+        return True
 
     def _on_motion(self, event):
         if not self._running:
-            return
+            return False
         if not self._action_queue.empty():
-            return
+            return False
         if get_state() != "idle":
-            return
+            return False
         if not self._detection_event_allowed():
-            return
+            return False
         self._mark_detection_event()
         self.events.append({"type": "motion", "ts": event.timestamp})
         log("motion_detected", "движение в кадре")
         log("action_queue", "добавлено: motion")
         self._action_queue.put(("motion", event))
+        return True
 
     def _on_wake_word(self, phrase, heard_text=""):
         if not self._running:
