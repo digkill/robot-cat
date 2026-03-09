@@ -29,8 +29,7 @@ from config import (
 )
 
 from modules.detection import PersonMotionDetector, EventType
-from modules.s3_upload import upload_file
-from modules.recorder import record_video
+from modules.recorder import capture_motion_snapshots
 from modules.llm import get_joke, get_greeting, get_how_are_you_response, chat, get_character_settings
 from modules.tts import speak
 from modules.speech import listen
@@ -185,12 +184,12 @@ class Robot:
 
     def _process_motion(self):
         set_state("recording")
-        log("recording_start", f"запись видео при движении ({MOTION_RECORD_SEC} сек)")
+        log("recording_start", f"серия снимков при движении: 1 кадр/сек, {MOTION_RECORD_SEC} сек")
         log("wake_word", "пауза wake word на время записи")
         self._pause_wakeword()
         log("camera", "пауза детектора для записи")
         self.detector.pause()
-        path = None
+        paths = []
         try:
             time.sleep(1.5)
             if MOTION_GREETING_ENABLED:
@@ -201,24 +200,19 @@ class Robot:
                 speak(greeting, blocking=True)
                 self.face.set_speaking(False)
                 log("face", "режим idle")
-            log("recorder", "старт записи видео")
-            path = record_video(MOTION_RECORD_SEC)
-            log("recorder", f"запись завершена: {path or 'ошибка'}")
+            log("recorder", "старт серии снимков")
+            paths = capture_motion_snapshots(MOTION_RECORD_SEC, interval_sec=1.0)
+            log("recorder", f"серия снимков завершена: {len(paths)} шт.")
         finally:
             log("camera", "возобновление детектора")
             self.detector.resume()
             log("wake_word", "возобновление wake word после записи")
             self._resume_wakeword()
-        if path:
-            log("s3", f"загрузка: {path}")
-            s3_key = upload_file(path)
-            if s3_key:
-                self.events.append({"type": "motion_recorded", "s3_key": s3_key})
-                log("recording_uploaded", f"s3:{s3_key}")
-            else:
-                log("recording_saved", str(path))
+        if paths:
+            self.events.append({"type": "motion_captured", "count": len(paths), "files": [str(p) for p in paths]})
+            log("recording_saved", ", ".join(path.name for path in paths))
         else:
-            log("recording_failed", "ошибка записи")
+            log("recording_failed", "не удалось сделать снимки")
         set_state("idle")
 
     def _worker(self):

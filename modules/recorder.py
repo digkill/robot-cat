@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Запись видео при движении."""
+"""Запись видео и серия снимков при движении."""
 
 import subprocess
 import shutil
@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from datetime import datetime
 
-from config import RECORDINGS_DIR, MOTION_RECORD_SEC
+from config import RECORDINGS_DIR, MOTION_RECORD_SEC, SNAPSHOTS_DIR
 
 
 def _log(action: str, detail: str):
@@ -62,6 +62,68 @@ def record_video(duration_sec: int = None, output_path: str = None) -> Path | No
     except Exception as e:
         _log("recorder", f"ошибка: {e}")
     return None
+
+
+def capture_motion_snapshots(
+    count: int = None,
+    interval_sec: float = 1.0,
+    output_dir: str | Path = None,
+) -> list[Path]:
+    """Сделать серию снимков через libcamera/rpicam."""
+    count = max(1, int(count or MOTION_RECORD_SEC))
+    interval_sec = max(0.1, float(interval_sec))
+    output_dir = Path(output_dir or SNAPSHOTS_DIR)
+    output_dir.mkdir(exist_ok=True)
+
+    def _capture_one(output_path: Path) -> bool:
+        cmd = None
+        if shutil.which("rpicam-still"):
+            cmd = [
+                "rpicam-still",
+                "-n",
+                "-t", "1",
+                "-o", str(output_path),
+            ]
+        elif shutil.which("libcamera-still"):
+            cmd = [
+                "libcamera-still",
+                "-n",
+                "-t", "1",
+                "-o", str(output_path),
+            ]
+        elif shutil.which("ffmpeg"):
+            cmd = [
+                "ffmpeg",
+                "-y",
+                "-f", "v4l2",
+                "-i", "/dev/video0",
+                "-frames:v", "1",
+                str(output_path),
+            ]
+        if not cmd:
+            _log("recorder", "rpicam-still, libcamera-still или ffmpeg не найден")
+            return False
+        try:
+            result = subprocess.run(cmd, capture_output=True, timeout=15)
+            if result.returncode == 0 and output_path.exists() and output_path.stat().st_size > 1000:
+                return True
+            stderr = result.stderr.decode(errors="ignore").strip()
+            if stderr:
+                _log("recorder", f"снимок ошибка: {stderr[:160]}")
+        except Exception as e:
+            _log("recorder", f"снимок ошибка: {e}")
+        return False
+
+    paths: list[Path] = []
+    for index in range(count):
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = output_dir / f"motion_{ts}_{index + 1:02d}.jpg"
+        if _capture_one(path):
+            _log("recorder", f"снимок {index + 1}/{count}: {path.name}")
+            paths.append(path)
+        if index < count - 1:
+            time.sleep(interval_sec)
+    return paths
 
 
 def record_audio(duration_sec: int = 10, output_path: str = None) -> Path | None:
