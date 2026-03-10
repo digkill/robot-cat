@@ -342,6 +342,9 @@ class Robot:
         self._speak_startup_greeting()
         set_state("idle")
 
+        worker = threading.Thread(target=self._worker, daemon=True)
+        worker.start()
+
         self.detector = PersonMotionDetector(
             person_callback=self._on_person,
             motion_callback=self._on_motion,
@@ -365,9 +368,6 @@ class Robot:
                 log("wake_word", f"локальное wake word включено: {WAKE_WORD_PHRASE}")
             except Exception as e:
                 log("wake_word", f"не удалось запустить: {e}")
-
-        worker = threading.Thread(target=self._worker, daemon=True)
-        worker.start()
 
         try:
             log("robot_ready", "Робот запущен. Выход: Ctrl+C")
