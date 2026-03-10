@@ -242,6 +242,7 @@ class Robot:
     def _process_button(self):
         set_state("button")
         log("button", "кнопка нажата — переход в диалог")
+        self._speak_with_emotion("Ку-ку! Кто там?", "кукушка")
         self._listen_and_respond()
 
     def _process_motion(self, event):

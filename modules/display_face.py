@@ -100,6 +100,17 @@ EMOTION_PRESETS = {
         "heart_eyes": True,
         "whisker_bias": 0.18,
     },
+    "кукушка": {
+        "accent": rgb(170, 255, 140),
+        "iris": rgb(90, 150, 70),
+        "eye_scale": 1.0,
+        "mouth": "grin",
+        "brow_lift": -6,
+        "left_tilt": -1,
+        "right_tilt": 1,
+        "sparkles": True,
+        "whisker_bias": 0.24,
+    },
     "праздничный": {
         "accent": COLOR_GOLD,
         "iris": rgb(255, 150, 60),
