@@ -28,6 +28,7 @@ from config import (
 )
 
 from modules.detection import PersonMotionDetector, EventType
+from modules.button import DoorbellButton
 from modules.recorder import save_detection_snapshot
 from modules.llm import (
     chat_with_emotion,
@@ -55,6 +56,7 @@ class Robot:
         self._running = True
         self._cleanup_started = False
         self.wake_listener = None
+        self.button = None
         self._last_detection_event_ts = 0.0
 
     def _detection_event_allowed(self) -> bool:
@@ -156,6 +158,17 @@ class Robot:
         log("action_queue", "добавлено: wake")
         self._action_queue.put(("wake", {"phrase": phrase, "heard": heard_text}))
 
+    def _on_button_press(self):
+        if not self._running:
+            return
+        if not self._action_queue.empty():
+            return
+        if get_state() != "idle":
+            return
+        log("button", "звонок")
+        log("action_queue", "добавлено: button")
+        self._action_queue.put(("button", {"ts": time.time()}))
+
     def _pause_wakeword(self):
         if self.wake_listener:
             self.wake_listener.pause()
@@ -226,6 +239,11 @@ class Robot:
         log("wake_word", "фраза пробуждения сработала — переход в диалог")
         self._listen_and_respond()
 
+    def _process_button(self):
+        set_state("button")
+        log("button", "кнопка нажата — переход в диалог")
+        self._listen_and_respond()
+
     def _process_motion(self, event):
         set_state("snapshot")
         log("recording_start", "снимок при движении: 1 кадр")
@@ -255,6 +273,9 @@ class Robot:
                 elif action == "wake":
                     log("worker", "обработка wake — диалог")
                     self._process_wake()
+                elif action == "button":
+                    log("worker", "обработка button — диалог")
+                    self._process_button()
             except queue.Empty:
                 continue
             except Exception as e:
@@ -329,6 +350,10 @@ class Robot:
         self.detector.start()
         log("detector", "детекция камеры запущена")
 
+        self.button = DoorbellButton(callback=self._on_button_press)
+        self.button.start()
+        log("button", "кнопка звонка активна")
+
         if WAKE_WORD_ENABLED:
             try:
                 self.wake_listener = WakeWordListener(
@@ -358,6 +383,8 @@ class Robot:
             log("robot_stop", "остановка робота")
             if hasattr(self, "detector"):
                 self._safe_cleanup_step("остановка детектора", self.detector.stop)
+            if self.button:
+                self._safe_cleanup_step("остановка кнопки", self.button.stop)
             if self.wake_listener:
                 self._safe_cleanup_step("остановка wake word", self.wake_listener.stop)
             self._safe_cleanup_step("выключение дисплея", self._shutdown_display)
