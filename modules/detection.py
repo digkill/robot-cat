@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Детекция человека и движения через камеру."""
+"""Детекция лица и движения через камеру."""
 
 import cv2
 import threading
@@ -99,10 +99,6 @@ class PersonMotionDetector:
             self._face_cascade = cv2.CascadeClassifier(str(cascade_path))
             if self._face_cascade.empty():
                 self._face_cascade = None
-        # HOG для тела
-        self._hog = cv2.HOGDescriptor()
-        self._hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
-
     def _init_camera(self):
         if CAMERA_DETECTION == "opencv":
             self._cam = cv2.VideoCapture(CAMERA_INDEX)
@@ -148,7 +144,7 @@ class PersonMotionDetector:
         return None
 
     def _detect_person(self, frame):
-        """OpenCV Haar/HOG — без токенов."""
+        """Детекция лица только через Haar cascade."""
         if len(frame.shape) == 3:
             if self._use_picam:
                 gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
@@ -167,12 +163,6 @@ class PersonMotionDetector:
             )
             if len(faces) > 0:
                 return True, 0.8
-        try:
-            boxes, _ = self._hog.detectMultiScale(gray, winStride=(8, 8), padding=(32, 32), scale=1.05)
-            if len(boxes) > 0:
-                return True, 0.6
-        except Exception:
-            pass
         return False, 0.0
 
     def _detect_motion(self, frame):

@@ -12,10 +12,12 @@ import threading
 import time
 import queue
 import random
+import json
 from pathlib import Path
 
 from gc9a01 import GC9A01, WIDTH, HEIGHT
 from config import (
+    BASE_DIR,
     RECORDINGS_DIR,
     AUDIO_CARD_INDEX,
     PERSON_INTERVAL,
@@ -61,6 +63,8 @@ class Robot:
         self._last_detection_event_ts = 0.0
         self._last_person_greeting_ts = 0.0
         self._last_person_greeting_text = ""
+        self._person_greeting_state_file = BASE_DIR / "logs" / "person_greeting_state.json"
+        self._load_person_greeting_state()
 
     PERSON_GREETING_VARIANTS = (
         "Добрый день! Хорошего вам настроения!",
@@ -77,10 +81,37 @@ class Robot:
         self._last_detection_event_ts = time.monotonic()
 
     def _person_greeting_allowed(self) -> bool:
-        return (time.monotonic() - self._last_person_greeting_ts) >= PERSON_GREETING_COOLDOWN
+        return (time.time() - self._last_person_greeting_ts) >= PERSON_GREETING_COOLDOWN
 
     def _mark_person_greeting(self):
-        self._last_person_greeting_ts = time.monotonic()
+        self._last_person_greeting_ts = time.time()
+        self._save_person_greeting_state()
+
+    def _load_person_greeting_state(self):
+        try:
+            if self._person_greeting_state_file.exists():
+                data = json.loads(self._person_greeting_state_file.read_text(encoding="utf-8"))
+                self._last_person_greeting_ts = float(data.get("last_person_greeting_ts", 0.0))
+                self._last_person_greeting_text = str(data.get("last_person_greeting_text", "") or "")
+        except Exception:
+            self._last_person_greeting_ts = 0.0
+            self._last_person_greeting_text = ""
+
+    def _save_person_greeting_state(self):
+        try:
+            self._person_greeting_state_file.parent.mkdir(exist_ok=True)
+            self._person_greeting_state_file.write_text(
+                json.dumps(
+                    {
+                        "last_person_greeting_ts": self._last_person_greeting_ts,
+                        "last_person_greeting_text": self._last_person_greeting_text,
+                    },
+                    ensure_ascii=True,
+                ),
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
 
     def _pick_person_greeting(self) -> str:
         custom = (PERSON_GREETING_TEXT or "").strip()
@@ -91,6 +122,7 @@ class Robot:
             variants = list(self.PERSON_GREETING_VARIANTS)
         choice = random.choice(variants)
         self._last_person_greeting_text = choice
+        self._save_person_greeting_state()
         return choice
 
     def _speak_startup_greeting(self):
@@ -352,7 +384,7 @@ class Robot:
         log("llm", f"персонаж={character['id']} ({character['name']})")
         log("tts", f"provider={voice['provider']}, openai_voice={voice['openai_voice']}, fallback_voice={voice['voice']}, speed={voice['speed']}, volume={voice['volume']}")
         log("display", "дисплей инициализирован")
-        log("detection", "OpenCV Haar/HOG — без токенов")
+        log("detection", "детекция лица через Haar cascade — без токенов")
         self.disp.fill(0)
         time.sleep(0.1)
         self.face.start()
@@ -365,7 +397,7 @@ class Robot:
 
         self.detector = PersonMotionDetector(
             person_callback=self._on_person,
-            motion_callback=self._on_motion,
+            motion_callback=None,
             person_interval=PERSON_INTERVAL,
             motion_cooldown=MOTION_COOLDOWN,
         )
