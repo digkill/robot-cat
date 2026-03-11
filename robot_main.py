@@ -11,6 +11,7 @@ import subprocess
 import threading
 import time
 import queue
+import random
 from pathlib import Path
 
 from gc9a01 import GC9A01, WIDTH, HEIGHT
@@ -19,6 +20,7 @@ from config import (
     AUDIO_CARD_INDEX,
     PERSON_INTERVAL,
     PERSON_GREETING_TEXT,
+    PERSON_GREETING_COOLDOWN,
     MOTION_COOLDOWN,
     DETECTION_EVENT_COOLDOWN,
     LISTEN_DURATION,
@@ -34,6 +36,7 @@ from modules.recorder import save_detection_snapshot
 from modules.llm import (
     chat_with_emotion,
     get_character_settings,
+    get_person_wish_with_emotion,
 )
 from modules.tts import speak
 from modules.speech import listen
@@ -56,12 +59,39 @@ class Robot:
         self.wake_listener = None
         self.button = None
         self._last_detection_event_ts = 0.0
+        self._last_person_greeting_ts = 0.0
+        self._last_person_greeting_text = ""
+
+    PERSON_GREETING_VARIANTS = (
+        "Добрый день! Хорошего вам настроения!",
+        "Здравствуйте! Пусть у вас сегодня будет чудесный день!",
+        "Привет! Улыбок вам и хорошего настроения!",
+        "Добрый день! Пусть у вас всё сегодня складывается легко!",
+        "Здравствуйте! Желаю вам тепла, радости и удачи!",
+    )
 
     def _detection_event_allowed(self) -> bool:
         return (time.monotonic() - self._last_detection_event_ts) >= DETECTION_EVENT_COOLDOWN
 
     def _mark_detection_event(self):
         self._last_detection_event_ts = time.monotonic()
+
+    def _person_greeting_allowed(self) -> bool:
+        return (time.monotonic() - self._last_person_greeting_ts) >= PERSON_GREETING_COOLDOWN
+
+    def _mark_person_greeting(self):
+        self._last_person_greeting_ts = time.monotonic()
+
+    def _pick_person_greeting(self) -> str:
+        custom = (PERSON_GREETING_TEXT or "").strip()
+        if custom and custom not in self.PERSON_GREETING_VARIANTS:
+            return custom
+        variants = [text for text in self.PERSON_GREETING_VARIANTS if text != self._last_person_greeting_text]
+        if not variants:
+            variants = list(self.PERSON_GREETING_VARIANTS)
+        choice = random.choice(variants)
+        self._last_person_greeting_text = choice
+        return choice
 
     def _speak_startup_greeting(self):
         """Озвучить короткое приветствие при запуске робота."""
@@ -118,8 +148,11 @@ class Robot:
             return False
         if get_state() != "idle":
             return False
+        if not self._person_greeting_allowed():
+            return False
         if not self._detection_event_allowed():
             return False
+        self._mark_person_greeting()
         self._mark_detection_event()
         self.events.append({"type": "person", "ts": event.timestamp})
         log("person_detected", f"человек в кадре (conf={event.confidence:.2f})")
@@ -177,10 +210,11 @@ class Robot:
 
     def _process_person(self):
         set_state("greeting")
-        greeting = PERSON_GREETING_TEXT or "Добрый день! Хорошего вам настроения!"
+        greeting, greeting_emotion = get_person_wish_with_emotion()
+        greeting = greeting or self._pick_person_greeting()
         log("greeting_start", "приветствие человека — одна добрая фраза")
         log("tts", f"озвучивание: {greeting[:60]}...")
-        self._speak_with_emotion(greeting, "радостный")
+        self._speak_with_emotion(greeting, greeting_emotion or "радостный")
         log("tts", "приветствие озвучено")
         log("greeting_done", "приветствие завершено")
         set_state("idle")
@@ -319,6 +353,8 @@ class Robot:
         log("tts", f"provider={voice['provider']}, openai_voice={voice['openai_voice']}, fallback_voice={voice['voice']}, speed={voice['speed']}, volume={voice['volume']}")
         log("display", "дисплей инициализирован")
         log("detection", "OpenCV Haar/HOG — без токенов")
+        self.disp.fill(0)
+        time.sleep(0.1)
         self.face.start()
         log("face", "анимация лица запущена")
         self._speak_startup_greeting()

@@ -303,6 +303,21 @@ def get_how_are_you_response_with_emotion() -> tuple[str, str]:
     )
 
 
+def get_person_wish_with_emotion() -> tuple[str, str]:
+    """Короткое доброе пожелание при авто-детекции человека."""
+    if LLM_CONSOLE_URL:
+        return _call_console_emotional(
+            "Скажи одно короткое доброе пожелание человеку на русском. Каждый раз формулируй немного по-разному.",
+            "радостный",
+        )
+    return _call_openai_emotional(
+        "Скажи одно короткое доброе пожелание человеку на русском. Каждый раз формулируй немного по-разному.",
+        "Скажи короткое доброе пожелание человеку.",
+        default_emotion="радостный",
+        max_tokens=80,
+    )
+
+
 def chat(user_message: str, history: list = None) -> str:
     """Диалог с ассистентом через OpenAI."""
     text, _ = chat_with_emotion(user_message, history)
