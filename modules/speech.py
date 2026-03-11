@@ -100,6 +100,11 @@ def _run_pw_record_for_duration(path: Path, duration_sec: float):
     return subprocess.CompletedProcess(cmd, proc.returncode, stdout=stdout, stderr=stderr)
 
 
+def _pipewire_is_unavailable(stderr_text: str) -> bool:
+    stderr_text = (stderr_text or "").lower()
+    return "pw_context_connect() failed" in stderr_text or "host is down" in stderr_text
+
+
 def _get_audio_user_env():
     """Окружение пользовательской аудио-сессии для записи через PipeWire."""
     user = os.environ.get("ROBOT_AUDIO_USER") or os.environ.get("SUDO_USER") or "mini"
@@ -137,6 +142,13 @@ def record_audio(duration_sec: float = 6, device: str = None) -> Path | None:
         _log(f"старт записи: {'pw-record' if use_pw_record else 'arecord'}, duration={int(duration_sec)}с")
         if use_pw_record:
             r = _run_pw_record_for_duration(path, duration_sec)
+            stderr = r.stderr.decode(errors="ignore").strip()
+            if (r.returncode != 0 or not path.exists() or path.stat().st_size <= 1000) and _pipewire_is_unavailable(stderr) and shutil.which("arecord"):
+                _log("pw-record недоступен, fallback на arecord")
+                r = _run_as_user(
+                    ["arecord", "-D", device, "-d", str(int(duration_sec)), "-f", "cd", "-q", str(path)],
+                    timeout=int(duration_sec) + 5,
+                )
         else:
             r = _run_as_user(
                 ["arecord", "-D", device, "-d", str(int(duration_sec)), "-f", "cd", "-q", str(path)],

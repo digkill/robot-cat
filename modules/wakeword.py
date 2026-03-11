@@ -128,6 +128,11 @@ def _run_pw_record_for_duration(path: Path, duration_sec: float):
     return subprocess.CompletedProcess(cmd, proc.returncode, stdout=stdout, stderr=stderr)
 
 
+def _pipewire_is_unavailable(stderr_text: str) -> bool:
+    stderr_text = (stderr_text or "").lower()
+    return "pw_context_connect() failed" in stderr_text or "host is down" in stderr_text
+
+
 class WakeWordListener:
     """Фоновый офлайн-слушатель wake word."""
 
@@ -187,6 +192,22 @@ class WakeWordListener:
         try:
             if use_pw_record:
                 result = _run_pw_record_for_duration(path, self.chunk_sec)
+                stderr = result.stderr.decode(errors="ignore").strip()
+                if (result.returncode != 0 or not path.exists() or path.stat().st_size <= 1000) and _pipewire_is_unavailable(stderr) and shutil.which("arecord"):
+                    _log("pw-record недоступен, fallback на arecord")
+                    result = _run_audio_capture(
+                        [
+                            "arecord",
+                            "-D", device,
+                            "-d", str(int(self.chunk_sec)),
+                            "-r", "16000",
+                            "-c", "1",
+                            "-f", "S16_LE",
+                            "-q",
+                            str(path),
+                        ],
+                        timeout=timeout,
+                    )
             else:
                 result = _run_audio_capture(
                     [

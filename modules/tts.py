@@ -7,6 +7,8 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import wave
+import audioop
 
 try:
     from config import (
@@ -103,18 +105,10 @@ def _play_wav(path: str, timeout=30, gain: float = 1.0):
     boosted_path = None
     try:
         effective_gain = max(0.05, gain * (max(0, min(100, AUDIO_OUTPUT_VOLUME)) / 100.0))
-        if abs(effective_gain - 1.0) > 0.01 and shutil.which("ffmpeg"):
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-                boosted_path = f.name
-            conv = subprocess.run(
-                ["ffmpeg", "-y", "-i", path, "-af", f"volume={effective_gain}", boosted_path],
-                capture_output=True,
-                timeout=min(timeout, 20),
-            )
-            if conv.returncode == 0 and os.path.exists(boosted_path):
+        if abs(effective_gain - 1.0) > 0.01:
+            boosted_path = _boost_wav_file(path, effective_gain)
+            if boosted_path:
                 play_path = boosted_path
-            elif conv.stderr:
-                _log(f"ffmpeg gain: {conv.stderr.decode(errors='ignore').strip()[:160]}")
         # aplay более предсказуем для явного ALSA-устройства и внешних звуковых карт,
         # но если устройство не настроено, откатываемся на pw-play.
         if shutil.which("aplay"):
@@ -133,6 +127,24 @@ def _play_wav(path: str, timeout=30, gain: float = 1.0):
                 os.unlink(boosted_path)
             except Exception:
                 pass
+
+
+def _boost_wav_file(path: str, gain: float) -> str | None:
+    """Быстро усилить PCM WAV без внешнего ffmpeg."""
+    try:
+        with wave.open(path, "rb") as src:
+            params = src.getparams()
+            frames = src.readframes(src.getnframes())
+        boosted = audioop.mul(frames, params.sampwidth, gain)
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            boosted_path = f.name
+        with wave.open(boosted_path, "wb") as dst:
+            dst.setparams(params)
+            dst.writeframes(boosted)
+        return boosted_path
+    except Exception as e:
+        _log(f"wav gain: {e}")
+        return None
 
 
 def _ensure_max_playback_volume():
@@ -307,7 +319,7 @@ def speak(text: str, blocking: bool = False):
                     if shutil.which("ffmpeg"):
                         wav_path = mp3_path.replace(".mp3", ".wav")
                         conv = subprocess.run(
-                            ["ffmpeg", "-y", "-i", mp3_path, "-acodec", "pcm_s16le", "-af", "volume=2.0", wav_path],
+                            ["ffmpeg", "-y", "-i", mp3_path, "-acodec", "pcm_s16le", wav_path],
                             capture_output=True,
                             timeout=15,
                         )
