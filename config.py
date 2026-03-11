@@ -59,6 +59,7 @@ CAMERA_INDEX = int(os.environ.get("CAMERA_INDEX", "0"))
 # Детекция: только локальный Python/OpenCV (Haar/HOG), без токенов
 # Интервал проверки человека (сек), пауза после движения (сек)
 PERSON_INTERVAL = float(os.environ.get("PERSON_INTERVAL", "8"))
+PERSON_GREETING_TEXT = os.environ.get("PERSON_GREETING_TEXT", "Добрый день! Хорошего вам настроения!").strip() or "Добрый день! Хорошего вам настроения!"
 MOTION_COOLDOWN = float(os.environ.get("MOTION_COOLDOWN", "5"))
 DETECTION_EVENT_COOLDOWN = float(os.environ.get("DETECTION_EVENT_COOLDOWN", "30"))
 

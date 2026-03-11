@@ -18,6 +18,7 @@ from config import (
     RECORDINGS_DIR,
     AUDIO_CARD_INDEX,
     PERSON_INTERVAL,
+    PERSON_GREETING_TEXT,
     MOTION_COOLDOWN,
     DETECTION_EVENT_COOLDOWN,
     LISTEN_DURATION,
@@ -33,9 +34,6 @@ from modules.recorder import save_detection_snapshot
 from modules.llm import (
     chat_with_emotion,
     get_character_settings,
-    get_greeting_with_emotion,
-    get_how_are_you_response_with_emotion,
-    get_joke_with_emotion,
 )
 from modules.tts import speak
 from modules.speech import listen
@@ -179,29 +177,13 @@ class Robot:
 
     def _process_person(self):
         set_state("greeting")
-        log("greeting_start", "приветствие человека — запуск LLM и TTS")
-        greeting, greeting_emotion = get_greeting_with_emotion()
-        greeting = greeting or "Привет! Рад тебя видеть!"
-        log("llm", f"приветствие: {greeting[:60]}...")
+        greeting = PERSON_GREETING_TEXT or "Добрый день! Хорошего вам настроения!"
+        log("greeting_start", "приветствие человека — одна добрая фраза")
         log("tts", f"озвучивание: {greeting[:60]}...")
-        self._speak_with_emotion(greeting, greeting_emotion)
+        self._speak_with_emotion(greeting, "радостный")
         log("tts", "приветствие озвучено")
-        time.sleep(0.5)
-        how, how_emotion = get_how_are_you_response_with_emotion()
-        how = how or "Как дела?"
-        log("llm", f"вопрос: {how[:60]}...")
-        log("tts", f"озвучивание: {how[:60]}...")
-        self._speak_with_emotion(how, how_emotion)
-        log("tts", "вопрос озвучен")
-        time.sleep(0.3)
-        joke, joke_emotion = get_joke_with_emotion()
-        joke = joke or "Почему роботы не боятся призраков? Потому что у них железные нервы!"
-        log("llm", f"шутка: {joke[:60]}...")
-        log("tts", f"озвучивание шутки: {joke[:60]}...")
-        self._speak_with_emotion(joke, joke_emotion)
-        log("tts", "шутка озвучена")
         log("greeting_done", "приветствие завершено")
-        self._listen_and_respond()
+        set_state("idle")
 
     def _listen_and_respond(self):
         """Слушать ответ, если сказали — ответить через OpenAI. Долго тишина — молчать."""
