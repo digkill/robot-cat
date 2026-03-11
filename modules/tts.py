@@ -8,7 +8,8 @@ import subprocess
 import tempfile
 import threading
 import wave
-import audioop
+import sys
+from array import array
 
 try:
     from config import (
@@ -135,12 +136,28 @@ def _boost_wav_file(path: str, gain: float) -> str | None:
         with wave.open(path, "rb") as src:
             params = src.getparams()
             frames = src.readframes(src.getnframes())
-        boosted = audioop.mul(frames, params.sampwidth, gain)
+        if params.sampwidth != 2:
+            _log(f"wav gain: unsupported sample width {params.sampwidth}, playback without boost")
+            return None
+        samples = array("h")
+        samples.frombytes(frames)
+        if sys.byteorder != "little":
+            samples.byteswap()
+        boosted_samples = array("h")
+        for sample in samples:
+            value = int(sample * gain)
+            if value > 32767:
+                value = 32767
+            elif value < -32768:
+                value = -32768
+            boosted_samples.append(value)
+        if sys.byteorder != "little":
+            boosted_samples.byteswap()
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
             boosted_path = f.name
         with wave.open(boosted_path, "wb") as dst:
             dst.setparams(params)
-            dst.writeframes(boosted)
+            dst.writeframes(boosted_samples.tobytes())
         return boosted_path
     except Exception as e:
         _log(f"wav gain: {e}")
