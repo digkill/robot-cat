@@ -30,6 +30,14 @@ sudo systemctl status robot-bot.service
 journalctl -u robot-bot.service -f
 ```
 
+Или через готовые скрипты:
+
+```bash
+./scripts/status_robot_service.sh
+./scripts/restart_robot_service.sh
+./scripts/stop_robot_service.sh
+```
+
 Сервис запускается от обычного пользователя. Если на конкретной Raspberry Pi не хватает прав на GPIO/SPI, это лучше решать через группы/udev, а не запуском всего робота под `sudo`, чтобы не ломать звук.
 
 ## LED
