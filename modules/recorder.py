@@ -7,7 +7,7 @@ import shutil
 from pathlib import Path
 from datetime import datetime
 
-from config import RECORDINGS_DIR, SNAPSHOTS_DIR
+from config import RECORDINGS_DIR, SNAPSHOTS_DIR, SNAPSHOTS_UPLOAD_TO_S3
 
 
 def _log(action: str, detail: str):
@@ -18,8 +18,13 @@ def _log(action: str, detail: str):
         pass
 
 
-def save_detection_snapshot(frame, is_rgb: bool = False, prefix: str = "motion") -> Path | None:
-    """Сохранить кадр детектора как один JPEG-снимок."""
+def _snapshot_s3_key(path: Path) -> str:
+    ts = datetime.now().strftime("%Y/%m/%d/%H%M%S")
+    return f"snapshots/{ts}_{path.name}"
+
+
+def save_detection_snapshot(frame, is_rgb: bool = False, prefix: str = "motion", face_boxes=None) -> dict | None:
+    """Сохранить кадр детектора, при необходимости загрузить в S3."""
     if frame is None:
         return None
     SNAPSHOTS_DIR.mkdir(exist_ok=True)
@@ -27,9 +32,26 @@ def save_detection_snapshot(frame, is_rgb: bool = False, prefix: str = "motion")
     path = SNAPSHOTS_DIR / f"{prefix}_{ts}.jpg"
     try:
         save_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR) if is_rgb else frame
+        if face_boxes:
+            for (x, y, w, h) in face_boxes:
+                cv2.rectangle(save_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                cv2.putText(save_frame, "FACE", (x, max(0, y - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
         if cv2.imwrite(str(path), save_frame):
             _log("recorder", f"снимок сохранен: {path.name}")
-            return path
+            s3_key = None
+            if SNAPSHOTS_UPLOAD_TO_S3:
+                try:
+                    from modules.s3_upload import upload_file
+                    s3_key = upload_file(path, s3_key=_snapshot_s3_key(path))
+                    if s3_key:
+                        _log("s3", f"снимок загружен: {s3_key}")
+                        try:
+                            path.unlink()
+                        except Exception:
+                            pass
+                except Exception as e:
+                    _log("s3", f"снимок ошибка загрузки: {e}")
+            return {"name": path.name, "local_path": str(path) if path.exists() else None, "s3_key": s3_key}
     except Exception as e:
         _log("recorder", f"снимок ошибка: {e}")
     return None

@@ -12,10 +12,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 try:
-    from config import CAMERA_DETECTION, CAMERA_INDEX
+    from config import CAMERA_DETECTION, CAMERA_INDEX, CAMERA_ROTATE_180
 except ImportError:
     CAMERA_DETECTION = "opencv"
     CAMERA_INDEX = 0
+    CAMERA_ROTATE_180 = True
 
 try:
     from picamera2 import Picamera2
@@ -74,12 +75,16 @@ def main():
     while True:
         if use_picam:
             frame = cam.capture_array()
+            if CAMERA_ROTATE_180:
+                frame = cv2.rotate(frame, cv2.ROTATE_180)
             gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
             display = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         else:
             ret, frame = cam.read()
             if not ret:
                 continue
+            if CAMERA_ROTATE_180:
+                frame = cv2.rotate(frame, cv2.ROTATE_180)
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             display = frame.copy()
 

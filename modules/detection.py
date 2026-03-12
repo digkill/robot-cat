@@ -9,6 +9,8 @@ from pathlib import Path
 from dataclasses import dataclass
 from enum import Enum
 
+from modules.recorder import save_detection_snapshot
+
 try:
     from picamera2 import Picamera2
     HAS_PICAMERA2 = True
@@ -16,10 +18,11 @@ except ImportError:
     HAS_PICAMERA2 = False
 
 try:
-    from config import CAMERA_DETECTION, CAMERA_INDEX, SNAPSHOTS_DIR, SNAPSHOT_INTERVAL
+    from config import CAMERA_DETECTION, CAMERA_INDEX, CAMERA_ROTATE_180, SNAPSHOTS_DIR, SNAPSHOT_INTERVAL
 except ImportError:
     CAMERA_DETECTION = "opencv"
     CAMERA_INDEX = 0
+    CAMERA_ROTATE_180 = True
     SNAPSHOTS_DIR = Path(__file__).parent.parent / "snapshots"
     SNAPSHOT_INTERVAL = 0
 
@@ -36,6 +39,7 @@ class DetectionEvent:
     frame: any
     timestamp: float
     confidence: float = 0.0
+    face_boxes: any = None
 
 
 class PersonMotionDetector:
@@ -136,12 +140,16 @@ class PersonMotionDetector:
 
     def _read_frame(self):
         if self._use_picam and self._cam:
-            return self._cam.capture_array()
-        if self._cam and self._cam.isOpened():
+            frame = self._cam.capture_array()
+        elif self._cam and self._cam.isOpened():
             ret, frame = self._cam.read()
-            if ret:
-                return frame
-        return None
+            if not ret:
+                return None
+        else:
+            return None
+        if CAMERA_ROTATE_180:
+            frame = cv2.rotate(frame, cv2.ROTATE_180)
+        return frame
 
     def _detect_person(self, frame):
         """Детекция лица только через Haar cascade."""
@@ -162,8 +170,8 @@ class PersonMotionDetector:
                 minSize=(32, 32),
             )
             if len(faces) > 0:
-                return True, 0.8
-        return False, 0.0
+                return True, 0.8, faces
+        return False, 0.0, []
 
     def _detect_motion(self, frame):
         if len(frame.shape) == 3:
@@ -195,9 +203,9 @@ class PersonMotionDetector:
 
             # Человек проверяем первым, чтобы лицо не терялось на фоне постоянного движения.
             if self.person_callback and (now - self._last_person_time) >= self.person_interval:
-                found, conf = self._detect_person(frame)
+                found, conf, faces = self._detect_person(frame)
                 if found:
-                    accepted = self.person_callback(DetectionEvent(EventType.PERSON, frame.copy(), now, conf))
+                    accepted = self.person_callback(DetectionEvent(EventType.PERSON, frame.copy(), now, conf, face_boxes=faces))
                     if accepted is not False:
                         person_found = True
                         self._last_person_time = now
@@ -223,13 +231,10 @@ class PersonMotionDetector:
             if SNAPSHOT_INTERVAL > 0 and (now - self._last_snapshot_time) >= SNAPSHOT_INTERVAL:
                 self._last_snapshot_time = now
                 try:
-                    SNAPSHOTS_DIR.mkdir(exist_ok=True)
-                    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    path = SNAPSHOTS_DIR / f"snapshot_{ts}.jpg"
-                    save_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR) if self._use_picam else frame
-                    if cv2.imwrite(str(path), save_frame):
+                    result = save_detection_snapshot(frame, is_rgb=self._use_picam, prefix="snapshot")
+                    if result:
                         from modules.watchlog import log
-                        log("snapshot", str(path.name))
+                        log("snapshot", result.get("s3_key") or result.get("name") or "ok")
                 except Exception as e:
                     try:
                         from modules.watchlog import log

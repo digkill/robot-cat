@@ -55,6 +55,7 @@ BUTTON_ACTIVE_LOW = os.environ.get("BUTTON_ACTIVE_LOW", "true").lower() == "true
 # Камера для детекции: opencv (V4L2) или picamera2 (CSI)
 CAMERA_DETECTION = os.environ.get("CAMERA_DETECTION", "opencv")
 CAMERA_INDEX = int(os.environ.get("CAMERA_INDEX", "0"))
+CAMERA_ROTATE_180 = os.environ.get("CAMERA_ROTATE_180", "true").lower() == "true"
 
 # Детекция: только локальный Python/OpenCV (Haar/HOG), без токенов
 # Интервал проверки человека (сек), пауза после движения (сек)
@@ -93,3 +94,4 @@ LISTEN_MIN_TEXT = int(os.environ.get("LISTEN_MIN_TEXT", "2"))
 
 # Снимки камеры: интервал (сек), 0 = отключено
 SNAPSHOT_INTERVAL = float(os.environ.get("SNAPSHOT_INTERVAL", "5"))
+SNAPSHOTS_UPLOAD_TO_S3 = os.environ.get("SNAPSHOTS_UPLOAD_TO_S3", "true").lower() == "true"

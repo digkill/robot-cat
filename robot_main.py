@@ -240,8 +240,23 @@ class Robot:
         if self.wake_listener and self._running:
             self.wake_listener.resume()
 
-    def _process_person(self):
+    def _process_person(self, event):
         set_state("greeting")
+        snapshot = save_detection_snapshot(
+            event.frame if event else None,
+            is_rgb=getattr(self.detector, "_use_picam", False),
+            prefix="person",
+            face_boxes=getattr(event, "face_boxes", None),
+        )
+        if snapshot:
+            self.events.append(
+                {
+                    "type": "person_snapshot",
+                    "file": snapshot.get("local_path"),
+                    "s3_key": snapshot.get("s3_key"),
+                }
+            )
+            log("snapshot", snapshot.get("s3_key") or snapshot.get("name") or "ok")
         greeting, greeting_emotion = get_person_wish_with_emotion()
         greeting = greeting or self._pick_person_greeting()
         log("greeting_start", "приветствие человека — одна добрая фраза")
@@ -296,14 +311,20 @@ class Robot:
     def _process_motion(self, event):
         set_state("snapshot")
         log("recording_start", "снимок при движении: 1 кадр")
-        path = save_detection_snapshot(
+        result = save_detection_snapshot(
             event.frame if event else None,
             is_rgb=getattr(self.detector, "_use_picam", False),
             prefix="motion",
         )
-        if path:
-            self.events.append({"type": "motion_captured", "file": str(path)})
-            log("recording_saved", path.name)
+        if result:
+            self.events.append(
+                {
+                    "type": "motion_captured",
+                    "file": result.get("local_path"),
+                    "s3_key": result.get("s3_key"),
+                }
+            )
+            log("recording_saved", result.get("s3_key") or result.get("name") or "ok")
         else:
             log("recording_failed", "не удалось сохранить снимок")
         set_state("idle")
@@ -315,7 +336,7 @@ class Robot:
                 log("action_queue", f"обработка: {action}")
                 if action == "person":
                     log("worker", "обработка person — приветствие")
-                    self._process_person()
+                    self._process_person(event)
                 elif action == "motion":
                     log("worker", "обработка motion — снимок")
                     self._process_motion(event)
