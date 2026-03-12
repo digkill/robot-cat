@@ -397,7 +397,7 @@ class Robot:
 
         self.detector = PersonMotionDetector(
             person_callback=self._on_person,
-            motion_callback=None,
+            motion_callback=self._on_motion,
             person_interval=PERSON_INTERVAL,
             motion_cooldown=MOTION_COOLDOWN,
         )
