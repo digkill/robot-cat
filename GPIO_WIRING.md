@@ -167,6 +167,26 @@ sudo raspi-config
 
 Проверка: `ls /dev/spi*` → `/dev/spidev0.0` и `/dev/spidev0.1`
 
+---
+
+## Дисплей не работает — диагностика
+
+Запустите:
+
+```bash
+./scripts/check_display.sh
+```
+
+**Частые причины:**
+
+| Проблема | Решение |
+|----------|---------|
+| `/dev/spidev0.0` не найден | Включите SPI: `sudo raspi-config` → Interface Options → SPI → Enable |
+| Permission denied (SPI/GPIO) | `sudo usermod -aG spi,gpio $USER` и перелогиньтесь |
+| Экран чёрный, подсветка не горит | Проверьте BL: GPIO26 → pin 37. В `.env`: `DISPLAY_BACKLIGHT_PIN=26` |
+| Экран белый/мусор | Проверьте провода SCL (23), SDA (19), CS (24), DC (18), RST (22) |
+| Запуск не на Raspberry Pi | RPi.GPIO и spidev работают только на Pi |
+
 
 ---
 

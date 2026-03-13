@@ -133,6 +133,10 @@ def _pipewire_is_unavailable(stderr_text: str) -> bool:
     return "pw_context_connect() failed" in stderr_text or "host is down" in stderr_text
 
 
+# Кэш: PipeWire недоступен — не пытаться pw-record снова, не спамить лог
+_pw_record_unavailable = False
+
+
 class WakeWordListener:
     """Фоновый офлайн-слушатель wake word."""
 
@@ -156,6 +160,7 @@ class WakeWordListener:
         self._model = None
         self._chunk_index = 0
         self._backend = "pw-record" if shutil.which("pw-record") else "arecord"
+        self._last_not_found_log = 0.0  # throttle "wake word не найден"
 
     def _ensure_model(self):
         if not HAS_VOSK:
@@ -174,14 +179,22 @@ class WakeWordListener:
     def _matches(self, text: str) -> bool:
         heard = self._normalize(text)
         phrase = self._normalize(self.phrase)
-        if not heard or not phrase:
+        if not phrase:
             return False
-        if phrase in heard:
+        if not heard or heard == "[unk]":
+            return False
+        if phrase in heard or heard == phrase:
             return True
-        return phrase.replace(" ", "") in heard.replace(" ", "")
+        if phrase.replace(" ", "") in heard.replace(" ", ""):
+            return True
+        # Короткие триггеры: "kitty" или "hello" при phrase "hello kitty"
+        if "hello kitty" in phrase and (heard == "kitty" or heard == "hello"):
+            return True
+        return False
 
     def _record_chunk(self) -> Path | None:
-        use_pw_record = shutil.which("pw-record") is not None
+        global _pw_record_unavailable
+        use_pw_record = shutil.which("pw-record") is not None and not _pw_record_unavailable
         if not use_pw_record and not shutil.which("arecord"):
             _log("микрофон недоступен: ни pw-record, ни arecord не найдены")
             return None
@@ -194,7 +207,8 @@ class WakeWordListener:
                 result = _run_pw_record_for_duration(path, self.chunk_sec)
                 stderr = result.stderr.decode(errors="ignore").strip()
                 if (result.returncode != 0 or not path.exists() or path.stat().st_size <= 1000) and _pipewire_is_unavailable(stderr) and shutil.which("arecord"):
-                    _log("pw-record недоступен, fallback на arecord")
+                    _pw_record_unavailable = True
+                    _log("pw-record недоступен, используем arecord")
                     result = _run_audio_capture(
                         [
                             "arecord",
@@ -264,6 +278,16 @@ class WakeWordListener:
             return "нормально"
         return "громко"
 
+    def _get_grammar_phrases(self) -> list[str]:
+        """Фразы для Vosk: основная + короткие варианты (kitty, hello) + [unk]."""
+        p = self._normalize(self.phrase)
+        phrases = [p, "[unk]"]
+        if "kitty" in p and p != "kitty":
+            phrases.insert(1, "kitty")
+        if "hello" in p and p != "hello":
+            phrases.insert(1, "hello")
+        return list(dict.fromkeys(phrases))  # без дубликатов
+
     def _transcribe_chunk(self, audio_path: Path) -> str:
         self._ensure_model()
         try:
@@ -273,7 +297,7 @@ class WakeWordListener:
                 recognizer = KaldiRecognizer(
                     self._model,
                     wf.getframerate(),
-                    json.dumps([self._normalize(self.phrase), "[unk]"]),
+                    json.dumps(self._get_grammar_phrases()),
                 )
                 while True:
                     data = wf.readframes(4000)
@@ -321,7 +345,11 @@ class WakeWordListener:
                     if self.callback:
                         self.callback(self.phrase, text)
                 else:
-                    _log(f"wake word не найден chunk={self._chunk_index}")
+                    # Логируем не чаще раза в 30 сек
+                    now = time.monotonic()
+                    if now - self._last_not_found_log >= 30:
+                        self._last_not_found_log = now
+                        _log(f"wake word не найден (распознано: {text or 'пусто'})")
             finally:
                 try:
                     audio_path.unlink()
