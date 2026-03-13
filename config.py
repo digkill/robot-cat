@@ -45,9 +45,9 @@ LED_TYPE = os.environ.get("LED_TYPE", "rgb")
 PIN_LED_DATA = int(os.environ.get("PIN_LED_DATA", "12"))
 PIN_RGB_R, PIN_RGB_G, PIN_RGB_B = 17, 27, 22
 PIN_BUTTON = 23
-# ВАЖНО: не используйте GPIO18 для подсветки, он нужен I2S/PCM для wm8960.
-# Рекомендуемый безопасный пин подсветки: GPIO26.
-_backlight_pin = os.environ.get("DISPLAY_BACKLIGHT_PIN", "").strip()
+# Подсветка дисплея: GPIO26 (pin 37). Пусто = отключено.
+# ВАЖНО: не используйте GPIO18 — он нужен I2S/PCM для wm8960.
+_backlight_pin = os.environ.get("DISPLAY_BACKLIGHT_PIN", "26").strip()
 DISPLAY_BACKLIGHT_PIN = int(_backlight_pin) if _backlight_pin else None
 # Кнопка: active_low (нажатие = GND) или active_high (нажатие = 3.3V)
 BUTTON_ACTIVE_LOW = os.environ.get("BUTTON_ACTIVE_LOW", "true").lower() == "true"
