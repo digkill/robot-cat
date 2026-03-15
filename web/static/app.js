@@ -1,13 +1,23 @@
 async function loadEvents() {
   const res = await fetch('/api/events');
-  const events = await res.json();
+  const payload = await res.json();
+  const events = payload.events || [];
   const el = document.getElementById('events');
+  const badge = document.getElementById('stateBadge');
+  badge.textContent = payload.state ? `(${payload.state})` : '';
   el.innerHTML = events.length
     ? events.slice(-20).reverse().map(e => {
-        const d = new Date(e.ts * 1000).toLocaleString();
-        return `<div><strong>${e.type}</strong> — ${d}</div>`;
+        const ts = e.ts ? new Date(e.ts * 1000).toLocaleString() : 'без времени';
+        const extra = e.s3_key ? ` · S3: ${e.s3_key}` : '';
+        return `<div><strong>${e.type}</strong> — ${ts}${extra}</div>`;
       }).join('')
     : '<div>Нет событий</div>';
+}
+
+async function loadLog() {
+  const res = await fetch('/api/log?lines=120');
+  const payload = await res.json();
+  document.getElementById('watchlog').textContent = payload.log || '';
 }
 
 async function loadRecordings() {
@@ -17,7 +27,7 @@ async function loadRecordings() {
   el.innerHTML = files.length
     ? files.map(f => `
       <div>
-        <video controls width="100%" src="${f.path}"></video>
+        <video controls preload="metadata" width="100%" src="${f.path}"></video>
         <a href="${f.path}" download>${f.name}</a>
       </div>
     `).join('')
@@ -36,6 +46,51 @@ async function loadSnapshots() {
       </div>
     `).join('')
     : '<div>Нет снимков</div>';
+}
+
+async function loadCameraStatus() {
+  const res = await fetch('/api/camera/status');
+  const data = await res.json();
+  const status = document.getElementById('cameraStatus');
+  const btn = document.getElementById('cameraRecordBtn');
+  if (data.recording) {
+    btn.textContent = 'Остановить запись';
+    btn.classList.add('recording-live');
+    status.textContent = `Идёт запись с ${new Date(data.started_at).toLocaleTimeString()} · кадров: ${data.frames}`;
+  } else {
+    btn.textContent = 'Начать запись';
+    btn.classList.remove('recording-live');
+    status.textContent = 'Поток доступен по локальной сети';
+  }
+}
+
+async function toggleCameraRecording() {
+  const btn = document.getElementById('cameraRecordBtn');
+  const result = document.getElementById('cameraResult');
+  const shouldStop = btn.classList.contains('recording-live');
+  btn.disabled = true;
+  result.textContent = shouldStop ? 'Остановка записи и сборка файла...' : 'Старт записи...';
+  try {
+    const res = await fetch(shouldStop ? '/api/camera/record/stop' : '/api/camera/record/start', {
+      method: 'POST'
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Ошибка камеры');
+    if (shouldStop) {
+      const audioText = data.with_audio ? 'со звуком' : 'без звука';
+      const s3Text = data.s3_key ? ` · S3: ${data.s3_key}` : '';
+      result.innerHTML = `Готово: <a href="${data.path}" target="_blank">${data.name}</a> (${audioText})${s3Text}`;
+      loadRecordings();
+    } else {
+      result.textContent = 'Запись запущена.';
+    }
+  } catch (e) {
+    result.textContent = 'Ошибка: ' + e.message;
+  } finally {
+    btn.disabled = false;
+    loadCameraStatus();
+    loadEvents();
+  }
 }
 
 async function sendToAssistant() {
@@ -62,8 +117,11 @@ document.getElementById('assistantInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') sendToAssistant();
 });
 
-// Запись с микрофона
-let mediaRecorder, audioChunks;
+document.getElementById('cameraRecordBtn').addEventListener('click', toggleCameraRecording);
+document.getElementById('cameraRefreshBtn').addEventListener('click', loadCameraStatus);
+
+let mediaRecorder;
+let audioChunks;
 document.getElementById('recordBtn').addEventListener('click', async () => {
   const btn = document.getElementById('recordBtn');
   const status = document.getElementById('recordStatus');
@@ -102,7 +160,15 @@ document.getElementById('recordBtn').addEventListener('click', async () => {
   }
 });
 
+document.getElementById('cameraStream').addEventListener('error', () => {
+  document.getElementById('cameraStatus').textContent = 'Поток камеры недоступен';
+});
+
 loadEvents();
+loadLog();
 loadRecordings();
 loadSnapshots();
+loadCameraStatus();
 setInterval(loadEvents, 5000);
+setInterval(loadLog, 5000);
+setInterval(loadCameraStatus, 3000);

@@ -13,13 +13,15 @@ from datetime import datetime
 
 from flask import Flask, render_template, jsonify, request, send_from_directory, Response
 
-from config import RECORDINGS_DIR, SNAPSHOTS_DIR
+from config import RECORDINGS_DIR, SNAPSHOTS_DIR, WEB_HOST, WEB_PORT
+from modules.camera_service import get_camera_service
 
 app = Flask(__name__, static_folder="web/static", template_folder="web/templates")
 
 # Глобальное состояние (связь с robot_main при совместном запуске)
 _robot_instance = None
 _events_store = []
+_camera_service = get_camera_service()
 
 
 def set_robot(robot):
@@ -72,6 +74,64 @@ def api_recordings():
             })
     files.sort(key=lambda x: x["mtime"], reverse=True)
     return jsonify(files[:50])
+
+
+@app.route("/camera/stream")
+def camera_stream():
+    try:
+        _camera_service.start()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 503
+
+    def generate():
+        for jpeg in _camera_service.iter_jpeg():
+            yield (
+                b"--frame\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
+            )
+
+    return Response(generate(), mimetype="multipart/x-mixed-replace; boundary=frame")
+
+
+@app.route("/api/camera/status")
+def api_camera_status():
+    status = _camera_service.recording_status()
+    status["stream_url"] = "/camera/stream"
+    return jsonify(status)
+
+
+@app.route("/api/camera/record/start", methods=["POST"])
+def api_camera_record_start():
+    try:
+        status = _camera_service.start_recording()
+        add_event({"type": "camera_record_start", "ts": datetime.now().timestamp()})
+        return jsonify(status)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/camera/record/stop", methods=["POST"])
+def api_camera_record_stop():
+    try:
+        result = _camera_service.stop_recording()
+        add_event(
+            {
+                "type": "camera_record_stop",
+                "ts": datetime.now().timestamp(),
+                "file": result.local_path,
+                "s3_key": result.s3_key,
+            }
+        )
+        return jsonify(
+            {
+                "name": result.name,
+                "path": f"/recordings/{result.name}",
+                "s3_key": result.s3_key,
+                "with_audio": result.with_audio,
+            }
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
 
 
 @app.route("/recordings/<path:filename>")
@@ -136,7 +196,7 @@ def api_assistant():
         return jsonify({"error": str(e)}), 500
 
 
-def run_web(host="0.0.0.0", port=5000):
+def run_web(host=WEB_HOST, port=WEB_PORT):
     Path("web/templates").mkdir(parents=True, exist_ok=True)
     Path("web/static").mkdir(parents=True, exist_ok=True)
     app.run(host=host, port=port, debug=False, threaded=True)

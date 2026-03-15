@@ -18,7 +18,6 @@ from pathlib import Path
 from gc9a01 import GC9A01, WIDTH, HEIGHT
 from config import (
     BASE_DIR,
-    RECORDINGS_DIR,
     AUDIO_CARD_INDEX,
     PERSON_INTERVAL,
     PERSON_GREETING_TEXT,
@@ -30,6 +29,9 @@ from config import (
     DISPLAY_BACKLIGHT_PIN,
     WAKE_WORD_ENABLED,
     WAKE_WORD_PHRASE,
+    WEB_AUTO_START,
+    WEB_HOST,
+    WEB_PORT,
 )
 
 from modules.detection import PersonMotionDetector, EventType
@@ -46,10 +48,11 @@ from modules.display_face import FaceAnimator, draw_face
 from modules.wakeword import WakeWordListener
 from modules.watchlog import set_state, log, get_state
 from modules.tts import get_voice_settings
+from modules.camera_service import get_camera_service
 
 
 class Robot:
-    def __init__(self):
+    def __init__(self, start_web: bool = True):
         self.disp = GC9A01(dc=24, rst=25, cs=8, backlight=DISPLAY_BACKLIGHT_PIN)
         if DISPLAY_BACKLIGHT_PIN is not None:
             self.disp.backlight(True)
@@ -60,6 +63,9 @@ class Robot:
         self._cleanup_started = False
         self.wake_listener = None
         self.button = None
+        self.camera_service = get_camera_service()
+        self._web_thread = None
+        self._start_web = bool(start_web and WEB_AUTO_START)
         self._last_detection_event_ts = 0.0
         self._last_person_greeting_ts = 0.0
         self._last_person_greeting_text = ""
@@ -244,7 +250,7 @@ class Robot:
         set_state("greeting")
         snapshot = save_detection_snapshot(
             event.frame if event else None,
-            is_rgb=getattr(self.detector, "_use_picam", False),
+            is_rgb=False,
             prefix="person",
             face_boxes=getattr(event, "face_boxes", None),
         )
@@ -313,7 +319,7 @@ class Robot:
         log("recording_start", "снимок при движении: 1 кадр")
         result = save_detection_snapshot(
             event.frame if event else None,
-            is_rgb=getattr(self.detector, "_use_picam", False),
+            is_rgb=False,
             prefix="motion",
         )
         if result:
@@ -377,9 +383,25 @@ class Robot:
             pass
         self.disp.close()
 
+    def _start_web_server(self):
+        if not self._start_web or self._web_thread:
+            return
+        from web_app import run_web, set_robot
+
+        set_robot(self)
+        self._web_thread = threading.Thread(
+            target=run_web,
+            kwargs={"host": WEB_HOST, "port": WEB_PORT},
+            daemon=True,
+            name="robot-web",
+        )
+        self._web_thread.start()
+        log("web", f"веб-интерфейс: http://{WEB_HOST}:{WEB_PORT}")
+
     def run(self):
         set_state("starting")
         log("robot_start", "запуск робота")
+        self._start_web_server()
         # Проверка TTS при старте
         if not shutil.which("espeak") and not shutil.which("espeak-ng"):
             try:
@@ -455,6 +477,7 @@ class Robot:
             log("robot_stop", "остановка робота")
             if hasattr(self, "detector"):
                 self._safe_cleanup_step("остановка детектора", self.detector.stop)
+            self._safe_cleanup_step("остановка камеры", self.camera_service.stop)
             if self.button:
                 self._safe_cleanup_step("остановка кнопки", self.button.stop)
             if self.wake_listener:

@@ -1,19 +1,43 @@
 * { box-sizing: border-box; }
 body {
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
   margin: 0;
   padding: 1rem;
-  background: #1a1a2e;
-  color: #eee;
+  background:
+    radial-gradient(circle at top left, rgba(64, 145, 108, 0.2), transparent 32%),
+    linear-gradient(180deg, #0d1b1e, #101924 55%, #0d1117);
+  color: #eef6f1;
 }
 header h1 { margin: 0 0 1.5rem; font-size: 1.5rem; }
 main { display: flex; flex-direction: column; gap: 1.5rem; max-width: 900px; }
 .card {
-  background: #16213e;
+  background: rgba(17, 28, 36, 0.9);
   border-radius: 12px;
   padding: 1.25rem;
+  border: 1px solid rgba(122, 162, 145, 0.16);
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.2);
 }
 .card h2 { margin: 0 0 1rem; font-size: 1.1rem; }
+.camera-panel { display: flex; flex-direction: column; gap: 0.9rem; }
+.camera-stream {
+  width: 100%;
+  max-height: 60vh;
+  object-fit: cover;
+  border-radius: 12px;
+  background: #05080c;
+  border: 1px solid rgba(122, 162, 145, 0.2);
+}
+.camera-controls {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.camera-result {
+  min-height: 1.2rem;
+  font-size: 0.92rem;
+  color: #b7dcca;
+}
 .events-list {
   max-height: 200px;
   overflow-y: auto;
@@ -21,7 +45,7 @@ main { display: flex; flex-direction: column; gap: 1.5rem; max-width: 900px; }
   margin-bottom: 0.5rem;
 }
 .events-list div { padding: 0.25rem 0; border-bottom: 1px solid #333; }
-.watchlog { font-size: 0.8rem; max-height: 200px; overflow-y: auto; background: #0f0f1a; padding: 0.75rem; border-radius: 8px; white-space: pre-wrap; }
+.watchlog { font-size: 0.8rem; max-height: 200px; overflow-y: auto; background: #0a1117; padding: 0.75rem; border-radius: 8px; white-space: pre-wrap; }
 .recordings-grid, .snapshots-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -44,25 +68,31 @@ main { display: flex; flex-direction: column; gap: 1.5rem; max-width: 900px; }
   flex: 1;
   padding: 0.5rem 0.75rem;
   border-radius: 8px;
-  border: 1px solid #333;
-  background: #0f0f1a;
-  color: #eee;
+  border: 1px solid #31424d;
+  background: #0a1117;
+  color: #eef6f1;
 }
 .assistant button, .card button {
   padding: 0.5rem 1rem;
   border-radius: 8px;
   border: none;
-  background: #3b82f6;
+  background: #228b6c;
   color: white;
   cursor: pointer;
 }
-.assistant button:hover, .card button:hover { background: #2563eb; }
+.assistant button:hover, .card button:hover { background: #1b7358; }
 .assistant-voice { margin-top: 0.5rem; display: flex; align-items: center; gap: 0.5rem; }
 #recordBtn.recording { background: #ef4444; }
+.recording-live { background: #b42318 !important; }
 .reply {
   margin-top: 0.5rem;
   padding: 0.75rem;
-  background: #0f0f1a;
+  background: #0a1117;
   border-radius: 8px;
   min-height: 2rem;
+}
+@media (max-width: 640px) {
+  body { padding: 0.75rem; }
+  .camera-controls { flex-direction: column; align-items: stretch; }
+  .assistant { flex-direction: column; }
 }

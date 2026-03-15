@@ -56,6 +56,14 @@ BUTTON_ACTIVE_LOW = os.environ.get("BUTTON_ACTIVE_LOW", "true").lower() == "true
 CAMERA_DETECTION = os.environ.get("CAMERA_DETECTION", "opencv")
 CAMERA_INDEX = int(os.environ.get("CAMERA_INDEX", "0"))
 CAMERA_ROTATE_180 = os.environ.get("CAMERA_ROTATE_180", "true").lower() == "true"
+CAMERA_WIDTH = int(os.environ.get("CAMERA_WIDTH", "640"))
+CAMERA_HEIGHT = int(os.environ.get("CAMERA_HEIGHT", "480"))
+CAMERA_FPS = float(os.environ.get("CAMERA_FPS", "15"))
+CAMERA_JPEG_QUALITY = int(os.environ.get("CAMERA_JPEG_QUALITY", "80"))
+
+WEB_HOST = os.environ.get("WEB_HOST", "0.0.0.0").strip() or "0.0.0.0"
+WEB_PORT = int(os.environ.get("WEB_PORT", "5000"))
+WEB_AUTO_START = os.environ.get("WEB_AUTO_START", "true").lower() == "true"
 
 # Детекция: только локальный Python/OpenCV (Haar/HOG), без токенов
 # Интервал проверки человека (сек), пауза после движения (сек)

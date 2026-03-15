@@ -13,6 +13,19 @@
 
   <main>
     <section class="card">
+      <h2>📡 Камера робота</h2>
+      <div class="camera-panel">
+        <img id="cameraStream" class="camera-stream" src="/camera/stream" alt="Live stream камеры робота" />
+        <div class="camera-controls">
+          <button id="cameraRecordBtn">Начать запись</button>
+          <button id="cameraRefreshBtn">Обновить статус</button>
+          <span id="cameraStatus">Подключение...</span>
+        </div>
+        <div id="cameraResult" class="camera-result"></div>
+      </div>
+    </section>
+
+    <section class="card">
       <h2>📋 События <span id="stateBadge"></span></h2>
       <div id="events" class="events-list"></div>
       <button onclick="loadEvents()">Обновить</button>

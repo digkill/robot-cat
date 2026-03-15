@@ -4,25 +4,16 @@
 import cv2
 import threading
 import time
-from datetime import datetime
 from pathlib import Path
 from dataclasses import dataclass
 from enum import Enum
 
 from modules.recorder import save_detection_snapshot
+from modules.camera_service import get_camera_service
 
 try:
-    from picamera2 import Picamera2
-    HAS_PICAMERA2 = True
+    from config import SNAPSHOTS_DIR, SNAPSHOT_INTERVAL
 except ImportError:
-    HAS_PICAMERA2 = False
-
-try:
-    from config import CAMERA_DETECTION, CAMERA_INDEX, CAMERA_ROTATE_180, SNAPSHOTS_DIR, SNAPSHOT_INTERVAL
-except ImportError:
-    CAMERA_DETECTION = "opencv"
-    CAMERA_INDEX = 0
-    CAMERA_ROTATE_180 = True
     SNAPSHOTS_DIR = Path(__file__).parent.parent / "snapshots"
     SNAPSHOT_INTERVAL = 0
 
@@ -66,8 +57,7 @@ class PersonMotionDetector:
         self._prev_frame = None
         self._running = False
         self._thread = None
-        self._cam = None
-        self._use_picam = False
+        self._camera_service = get_camera_service()
 
         # Haar cascade для лица
         cascade_name = "haarcascade_frontalface_default.xml"
@@ -103,61 +93,10 @@ class PersonMotionDetector:
             self._face_cascade = cv2.CascadeClassifier(str(cascade_path))
             if self._face_cascade.empty():
                 self._face_cascade = None
-    def _init_camera(self):
-        if CAMERA_DETECTION == "opencv":
-            self._cam = cv2.VideoCapture(CAMERA_INDEX)
-            if self._cam.isOpened():
-                self._cam.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-                self._cam.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-                self._use_picam = False
-                return True
-            if self._cam:
-                self._cam.release()
-                self._cam = None
-
-        if HAS_PICAMERA2:
-            try:
-                self._cam = Picamera2()
-                self._cam.configure(self._cam.create_video_configuration(
-                    main={"size": (640, 480), "format": "RGB888"}
-                ))
-                self._cam.start()
-                self._use_picam = True
-                return True
-            except Exception as e:
-                if self._cam:
-                    try:
-                        self._cam.close()
-                    except Exception:
-                        pass
-                    self._cam = None
-                try:
-                    from modules.watchlog import log
-                    log("camera", f"ошибка Picamera2: {e}")
-                except Exception:
-                    pass
-        return False
-
-    def _read_frame(self):
-        if self._use_picam and self._cam:
-            frame = self._cam.capture_array()
-        elif self._cam and self._cam.isOpened():
-            ret, frame = self._cam.read()
-            if not ret:
-                return None
-        else:
-            return None
-        if CAMERA_ROTATE_180:
-            frame = cv2.rotate(frame, cv2.ROTATE_180)
-        return frame
-
     def _detect_person(self, frame):
         """Детекция лица только через Haar cascade."""
         if len(frame.shape) == 3:
-            if self._use_picam:
-                gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
-            else:
-                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         else:
             gray = frame
         # Для CSI-камеры контраст часто "плоский", equalizeHist заметно улучшает Haar.
@@ -193,8 +132,8 @@ class PersonMotionDetector:
         return False
 
     def _run_loop(self):
-        while self._running and self._cam:
-            frame = self._read_frame()
+        while self._running:
+            frame = self._camera_service.get_frame(wait_timeout=1.0)
             if frame is None:
                 time.sleep(0.1)
                 continue
@@ -231,7 +170,7 @@ class PersonMotionDetector:
             if SNAPSHOT_INTERVAL > 0 and (now - self._last_snapshot_time) >= SNAPSHOT_INTERVAL:
                 self._last_snapshot_time = now
                 try:
-                    result = save_detection_snapshot(frame, is_rgb=self._use_picam, prefix="snapshot")
+                    result = save_detection_snapshot(frame, is_rgb=False, prefix="snapshot")
                     if result:
                         from modules.watchlog import log
                         log("snapshot", result.get("s3_key") or result.get("name") or "ok")
@@ -245,11 +184,10 @@ class PersonMotionDetector:
             time.sleep(0.5)
 
     def start(self):
-        if not self._init_camera():
-            raise RuntimeError("Камера недоступна")
+        self._camera_service.start()
         try:
             from modules.watchlog import log
-            log("camera", f"инициализирована ({'picamera2' if self._use_picam else 'opencv'})")
+            log("camera", "инициализирована через общий сервис камеры")
             if self._face_cascade is None:
                 log("detection", "Haar cascade не загружен — только HOG (тело)")
             else:
@@ -266,7 +204,7 @@ class PersonMotionDetector:
             pass
 
     def pause(self):
-        """Временно освободить камеру для записи."""
+        """Временно остановить цикл детекции."""
         try:
             from modules.watchlog import log
             log("detector", "пауза детекции")
@@ -282,29 +220,19 @@ class PersonMotionDetector:
                     log("detector", "join прерван Ctrl+C во время pause")
                 except Exception:
                     pass
-        if self._use_picam and self._cam:
-            try:
-                self._cam.stop()
-                self._cam.close()
-            except Exception:
-                pass
-            self._cam = None
-        elif self._cam and hasattr(self._cam, "release"):
-            self._cam.release()
-            self._cam = None
 
     def resume(self):
-        """Возобновить детекцию после записи."""
-        time.sleep(2)
-        if self._init_camera():
-            self._running = True
-            self._thread = threading.Thread(target=self._run_loop, daemon=True)
-            self._thread.start()
-            try:
-                from modules.watchlog import log
-                log("detector", "детекция возобновлена")
-            except Exception:
-                pass
+        """Возобновить детекцию после паузы."""
+        time.sleep(0.2)
+        self._camera_service.start()
+        self._running = True
+        self._thread = threading.Thread(target=self._run_loop, daemon=True)
+        self._thread.start()
+        try:
+            from modules.watchlog import log
+            log("detector", "детекция возобновлена")
+        except Exception:
+            pass
 
     def stop(self):
         try:
@@ -322,12 +250,3 @@ class PersonMotionDetector:
                     log("detector", "join прерван Ctrl+C во время stop")
                 except Exception:
                     pass
-        if self._use_picam and self._cam:
-            try:
-                self._cam.stop()
-                self._cam.close()
-            except Exception:
-                pass
-        elif self._cam and hasattr(self._cam, "release"):
-            self._cam.release()
-        self._cam = None
