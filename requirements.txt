@@ -10,3 +10,4 @@ pysocks>=1.7
 openai>=1.0
 httpx[socks]>=0.25
 vosk>=0.3.45
+websocket-client>=1.8

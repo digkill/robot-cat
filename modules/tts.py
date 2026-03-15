@@ -165,18 +165,8 @@ def _boost_wav_file(path: str, gain: float) -> str | None:
 
 
 def _ensure_max_playback_volume():
-    """Перед воспроизведением поднимаем аппаратную громкость карты на максимум."""
-    if not shutil.which("amixer"):
-        return
-    for control in ("Headphone", "Speaker", "Playback"):
-        try:
-            subprocess.run(
-                ["amixer", "-c", str(AUDIO_CARD_INDEX), "-q", "set", control, "100%"],
-                capture_output=True,
-                timeout=3,
-            )
-        except Exception:
-            pass
+    """Сохранено для совместимости: громкость больше не форсируется в 100%."""
+    return
 
 
 def get_voice_settings():

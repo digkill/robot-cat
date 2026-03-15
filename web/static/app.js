@@ -64,6 +64,111 @@ async function loadCameraStatus() {
   }
 }
 
+let volumeUpdateTimer;
+
+function fillSelect(el, values, selected, allowEmpty = false) {
+  const items = [];
+  if (allowEmpty) items.push('<option value="">Без фона</option>');
+  items.push(...values.map(value => `<option value="${value}">${value}</option>`));
+  el.innerHTML = items.join('');
+  el.value = selected || '';
+}
+
+async function loadFaceStatus() {
+  const [faceRes, mediaRes] = await Promise.all([fetch('/api/face'), fetch('/api/media')]);
+  const faceData = await faceRes.json();
+  const mediaData = await mediaRes.json();
+  const status = document.getElementById('faceStatus');
+  if (!faceRes.ok) {
+    status.textContent = faceData.error || 'Лицо недоступно';
+    return;
+  }
+  fillSelect(document.getElementById('faceEmotion'), faceData.options.emotions || [], faceData.state.emotion);
+  fillSelect(document.getElementById('faceTheme'), faceData.options.themes || [], faceData.state.theme);
+  fillSelect(document.getElementById('faceAnimation'), faceData.options.animations || [], faceData.state.animation_mode);
+  fillSelect(
+    document.getElementById('faceBackground'),
+    (mediaData || []).map(item => item.name),
+    faceData.state.background_name,
+    true
+  );
+  const bg = faceData.state.background_name
+    ? `${faceData.state.background_kind}: ${faceData.state.background_name}`
+    : 'без фона';
+  status.textContent = `Сейчас: ${faceData.state.emotion} · ${faceData.state.theme} · ${faceData.state.animation_mode} · ${bg}`;
+}
+
+async function applyFaceSettings() {
+  const payload = {
+    emotion: document.getElementById('faceEmotion').value,
+    theme: document.getElementById('faceTheme').value,
+    animation_mode: document.getElementById('faceAnimation').value,
+    background_name: document.getElementById('faceBackground').value
+  };
+  const res = await fetch('/api/face/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Ошибка лица');
+  await loadFaceStatus();
+}
+
+async function uploadBackgroundMedia(file) {
+  const fd = new FormData();
+  fd.append('media', file, file.name);
+  const res = await fetch('/api/media/upload', { method: 'POST', body: fd });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Ошибка загрузки');
+  await loadFaceStatus();
+  document.getElementById('faceBackground').value = data.name;
+}
+
+async function loadAudioStatus() {
+  const res = await fetch('/api/audio/status');
+  const data = await res.json();
+  const slider = document.getElementById('volumeSlider');
+  const valueEl = document.getElementById('volumeValue');
+  const statusEl = document.getElementById('audioStatus');
+  const muteBtn = document.getElementById('muteToggleBtn');
+  if (!data.available) {
+    slider.disabled = true;
+    muteBtn.disabled = true;
+    statusEl.textContent = 'ALSA/amixer недоступен';
+    return;
+  }
+  slider.disabled = false;
+  muteBtn.disabled = false;
+  slider.value = data.volume;
+  valueEl.textContent = `${data.volume}%`;
+  muteBtn.textContent = data.muted ? 'Unmute' : 'Mute';
+  statusEl.textContent = data.muted ? 'Звук выключен' : 'Звук включён';
+}
+
+async function setAudioVolume(volume) {
+  const res = await fetch('/api/audio/volume', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ volume })
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Ошибка громкости');
+  await loadAudioStatus();
+}
+
+async function toggleMute() {
+  const muted = document.getElementById('muteToggleBtn').textContent === 'Mute';
+  const res = await fetch('/api/audio/mute', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ muted })
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Ошибка mute');
+  await loadAudioStatus();
+}
+
 async function toggleCameraRecording() {
   const btn = document.getElementById('cameraRecordBtn');
   const result = document.getElementById('cameraResult');
@@ -119,6 +224,46 @@ document.getElementById('assistantInput').addEventListener('keydown', e => {
 
 document.getElementById('cameraRecordBtn').addEventListener('click', toggleCameraRecording);
 document.getElementById('cameraRefreshBtn').addEventListener('click', loadCameraStatus);
+document.getElementById('faceApplyBtn').addEventListener('click', async () => {
+  try {
+    await applyFaceSettings();
+  } catch (e) {
+    document.getElementById('faceStatus').textContent = 'Ошибка: ' + e.message;
+  }
+});
+document.getElementById('faceRefreshBtn').addEventListener('click', loadFaceStatus);
+document.getElementById('backgroundUpload').addEventListener('change', async e => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  document.getElementById('faceStatus').textContent = 'Загрузка фона...';
+  try {
+    await uploadBackgroundMedia(file);
+    document.getElementById('faceStatus').textContent = `Загружено: ${file.name}`;
+  } catch (err) {
+    document.getElementById('faceStatus').textContent = 'Ошибка: ' + err.message;
+  } finally {
+    e.target.value = '';
+  }
+});
+document.getElementById('muteToggleBtn').addEventListener('click', async () => {
+  try {
+    await toggleMute();
+  } catch (e) {
+    document.getElementById('audioStatus').textContent = 'Ошибка: ' + e.message;
+  }
+});
+document.getElementById('volumeSlider').addEventListener('input', e => {
+  const volume = Number(e.target.value);
+  document.getElementById('volumeValue').textContent = `${volume}%`;
+  clearTimeout(volumeUpdateTimer);
+  volumeUpdateTimer = setTimeout(async () => {
+    try {
+      await setAudioVolume(volume);
+    } catch (err) {
+      document.getElementById('audioStatus').textContent = 'Ошибка: ' + err.message;
+    }
+  }, 120);
+});
 
 let mediaRecorder;
 let audioChunks;
@@ -169,6 +314,10 @@ loadLog();
 loadRecordings();
 loadSnapshots();
 loadCameraStatus();
+loadFaceStatus();
+loadAudioStatus();
 setInterval(loadEvents, 5000);
 setInterval(loadLog, 5000);
 setInterval(loadCameraStatus, 3000);
+setInterval(loadFaceStatus, 7000);
+setInterval(loadAudioStatus, 5000);

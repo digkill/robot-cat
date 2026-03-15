@@ -49,6 +49,8 @@ from modules.wakeword import WakeWordListener
 from modules.watchlog import set_state, log, get_state
 from modules.tts import get_voice_settings
 from modules.camera_service import get_camera_service
+from modules.audio_control import get_audio_status, set_audio_mute, set_audio_volume
+from modules.remote_bridge import get_remote_bridge
 
 
 class Robot:
@@ -64,6 +66,8 @@ class Robot:
         self.wake_listener = None
         self.button = None
         self.camera_service = get_camera_service()
+        self.remote_bridge = get_remote_bridge()
+        self.remote_bridge.set_robot(self)
         self._web_thread = None
         self._start_web = bool(start_web and WEB_AUTO_START)
         self._last_detection_event_ts = 0.0
@@ -196,6 +200,7 @@ class Robot:
         log("person_detected", f"человек в кадре (conf={event.confidence:.2f})")
         log("action_queue", "добавлено: person")
         self._action_queue.put(("person", event))
+        self.remote_bridge.publish_event("person_detected", {"confidence": event.confidence})
         return True
 
     def _on_motion(self, event):
@@ -212,6 +217,7 @@ class Robot:
         log("motion_detected", "движение в кадре")
         log("action_queue", "добавлено: motion")
         self._action_queue.put(("motion", event))
+        self.remote_bridge.publish_event("motion_detected", {})
         return True
 
     def _on_wake_word(self, phrase, heard_text=""):
@@ -226,6 +232,7 @@ class Robot:
         log("wake_word", f"обнаружено: {detail}")
         log("action_queue", "добавлено: wake")
         self._action_queue.put(("wake", {"phrase": phrase, "heard": heard_text}))
+        self.remote_bridge.publish_event("wake_word", {"phrase": phrase, "heard": detail})
 
     def _on_button_press(self):
         if not self._running:
@@ -237,6 +244,7 @@ class Robot:
         log("button", "звонок")
         log("action_queue", "добавлено: button")
         self._action_queue.put(("button", {"ts": time.time()}))
+        self.remote_bridge.publish_event("button", {})
 
     def _pause_wakeword(self):
         if self.wake_listener:
@@ -398,6 +406,65 @@ class Robot:
         self._web_thread.start()
         log("web", f"веб-интерфейс: http://{WEB_HOST}:{WEB_PORT}")
 
+    def get_runtime_status(self):
+        return {
+            "state": get_state(),
+            "events_count": len(self.events),
+            "face": self.face.get_state() if self.face else {},
+            "face_options": self.face.get_options() if self.face else {},
+            "audio": get_audio_status(),
+            "camera": self.camera_service.recording_status(),
+            "wake_word_enabled": WAKE_WORD_ENABLED,
+            "wake_word_phrase": WAKE_WORD_PHRASE,
+        }
+
+    def apply_face_settings(self, payload: dict):
+        if "emotion" in payload:
+            self.face.set_emotion(str(payload.get("emotion") or "").strip())
+        if "theme" in payload:
+            self.face.set_theme(str(payload.get("theme") or "").strip())
+        if "animation_mode" in payload:
+            self.face.set_animation_mode(str(payload.get("animation_mode") or "").strip())
+        if "background_name" in payload:
+            self.face.set_background((payload.get("background_name") or "").strip() or None)
+        self.remote_bridge.publish_event("face_updated", self.face.get_state())
+        return self.face.get_state()
+
+    def set_volume(self, volume: int):
+        state = set_audio_volume(volume)
+        self.remote_bridge.publish_event("audio_volume", state)
+        return state
+
+    def set_mute(self, muted: bool):
+        state = set_audio_mute(muted)
+        self.remote_bridge.publish_event("audio_mute", state)
+        return state
+
+    def remote_speak(self, text: str, emotion: str | None = None):
+        text = (text or "").strip()
+        if not text:
+            raise RuntimeError("empty text")
+        self._speak_with_emotion(text, emotion or "радостный")
+        result = {"spoken": True, "text": text, "emotion": emotion or "радостный"}
+        self.remote_bridge.publish_event("speak", result)
+        return result
+
+    def camera_record_start(self):
+        status = self.camera_service.start_recording()
+        self.remote_bridge.publish_event("camera_record_start", status)
+        return status
+
+    def camera_record_stop(self):
+        result = self.camera_service.stop_recording()
+        payload = {
+            "name": result.name,
+            "local_path": result.local_path,
+            "s3_key": result.s3_key,
+            "with_audio": result.with_audio,
+        }
+        self.remote_bridge.publish_event("camera_record_stop", payload)
+        return payload
+
     def run(self):
         set_state("starting")
         log("robot_start", "запуск робота")
@@ -434,6 +501,7 @@ class Robot:
         log("face", "анимация лица запущена")
         self._speak_startup_greeting()
         set_state("idle")
+        self.remote_bridge.start()
 
         worker = threading.Thread(target=self._worker, daemon=True)
         worker.start()
@@ -482,6 +550,7 @@ class Robot:
                 self._safe_cleanup_step("остановка кнопки", self.button.stop)
             if self.wake_listener:
                 self._safe_cleanup_step("остановка wake word", self.wake_listener.stop)
+            self._safe_cleanup_step("остановка remote bridge", self.remote_bridge.stop)
             self._safe_cleanup_step("выключение дисплея", self._shutdown_display)
 
     def get_events(self):

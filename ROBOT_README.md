@@ -35,6 +35,17 @@ sudo python3 run_all.py
 python3 web_app.py
 ```
 
+## Production remote backend
+
+Для production-схемы рекомендуется:
+
+- Python на Raspberry Pi как hardware-agent
+- Go backend как control plane
+- WebSocket для команд и статуса
+- WebRTC для live video наружу
+
+Документ протокола: `REMOTE_BACKEND.md`
+
 ## Подключение GPIO
 
 См. **GPIO_WIRING.md** для полной распиновки.

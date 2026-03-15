@@ -10,11 +10,13 @@ import os
 import threading
 from pathlib import Path
 from datetime import datetime
+from werkzeug.utils import secure_filename
 
 from flask import Flask, render_template, jsonify, request, send_from_directory, Response
 
-from config import RECORDINGS_DIR, SNAPSHOTS_DIR, WEB_HOST, WEB_PORT
+from config import MEDIA_DIR, RECORDINGS_DIR, SNAPSHOTS_DIR, WEB_HOST, WEB_PORT
 from modules.camera_service import get_camera_service
+from modules.audio_control import get_audio_status, set_audio_mute, set_audio_volume
 
 app = Flask(__name__, static_folder="web/static", template_folder="web/templates")
 
@@ -98,6 +100,96 @@ def api_camera_status():
     status = _camera_service.recording_status()
     status["stream_url"] = "/camera/stream"
     return jsonify(status)
+
+
+@app.route("/api/audio/status")
+def api_audio_status():
+    return jsonify(get_audio_status())
+
+
+@app.route("/api/audio/volume", methods=["POST"])
+def api_audio_volume():
+    data = request.get_json() or {}
+    volume = data.get("volume")
+    if volume is None:
+        return jsonify({"error": "Не передана громкость"}), 400
+    try:
+        return jsonify(set_audio_volume(int(volume)))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/audio/mute", methods=["POST"])
+def api_audio_mute():
+    data = request.get_json() or {}
+    muted = bool(data.get("muted"))
+    try:
+        return jsonify(set_audio_mute(muted))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/face")
+def api_face():
+    if not _robot_instance or not hasattr(_robot_instance, "face"):
+        return jsonify({"error": "Робот недоступен"}), 503
+    return jsonify({"state": _robot_instance.face.get_state(), "options": _robot_instance.face.get_options()})
+
+
+@app.route("/api/face/settings", methods=["POST"])
+def api_face_settings():
+    if not _robot_instance or not hasattr(_robot_instance, "face"):
+        return jsonify({"error": "Робот недоступен"}), 503
+    data = request.get_json() or {}
+    face = _robot_instance.face
+    try:
+        if "emotion" in data:
+            face.set_emotion(str(data.get("emotion") or "").strip())
+        if "theme" in data:
+            face.set_theme(str(data.get("theme") or "").strip())
+        if "animation_mode" in data:
+            face.set_animation_mode(str(data.get("animation_mode") or "").strip())
+        if "background_name" in data:
+            face.set_background((data.get("background_name") or "").strip() or None)
+        return jsonify(face.get_state())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/media")
+def api_media():
+    files = []
+    for f in sorted(MEDIA_DIR.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+        if f.is_file():
+            files.append(
+                {
+                    "name": f.name,
+                    "path": f"/media/{f.name}",
+                    "size": f.stat().st_size,
+                    "mtime": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
+                }
+            )
+    return jsonify(files[:50])
+
+
+@app.route("/api/media/upload", methods=["POST"])
+def api_media_upload():
+    if "media" not in request.files:
+        return jsonify({"error": "Нет файла"}), 400
+    f = request.files["media"]
+    if f.filename == "":
+        return jsonify({"error": "Пустой файл"}), 400
+    name = secure_filename(f.filename)
+    if not name:
+        return jsonify({"error": "Некорректное имя файла"}), 400
+    path = MEDIA_DIR / name
+    f.save(str(path))
+    return jsonify({"name": name, "path": f"/media/{name}"})
+
+
+@app.route("/media/<path:filename>")
+def serve_media(filename):
+    return send_from_directory(MEDIA_DIR, filename)
 
 
 @app.route("/api/camera/record/start", methods=["POST"])

@@ -2,6 +2,7 @@
 """Конфигурация робота. Загружает переменные из .env"""
 
 import os
+import re
 from pathlib import Path
 
 # Загрузка .env
@@ -36,8 +37,10 @@ HTTP_RETRIES = int(os.environ.get("HTTP_RETRIES", "2"))
 BASE_DIR = Path(__file__).parent
 RECORDINGS_DIR = BASE_DIR / "recordings"
 SNAPSHOTS_DIR = BASE_DIR / "snapshots"
+MEDIA_DIR = BASE_DIR / "media"
 RECORDINGS_DIR.mkdir(exist_ok=True)
 SNAPSHOTS_DIR.mkdir(exist_ok=True)
+MEDIA_DIR.mkdir(exist_ok=True)
 
 # GPIO (BCM)
 # LED: rgb (R G B G — 4 контакта) или ws2812 (S V G)
@@ -65,6 +68,14 @@ WEB_HOST = os.environ.get("WEB_HOST", "0.0.0.0").strip() or "0.0.0.0"
 WEB_PORT = int(os.environ.get("WEB_PORT", "5000"))
 WEB_AUTO_START = os.environ.get("WEB_AUTO_START", "true").lower() == "true"
 
+REMOTE_BRIDGE_ENABLED = os.environ.get("REMOTE_BRIDGE_ENABLED", "false").lower() == "true"
+REMOTE_BRIDGE_URL = os.environ.get("REMOTE_BRIDGE_URL", "").strip()
+REMOTE_BRIDGE_TOKEN = os.environ.get("REMOTE_BRIDGE_TOKEN", "").strip()
+REMOTE_ROBOT_ID = os.environ.get("REMOTE_ROBOT_ID", "robot-cat").strip() or "robot-cat"
+REMOTE_PING_INTERVAL = float(os.environ.get("REMOTE_PING_INTERVAL", "15"))
+REMOTE_STATUS_INTERVAL = float(os.environ.get("REMOTE_STATUS_INTERVAL", "5"))
+REMOTE_VIDEO_MODE = os.environ.get("REMOTE_VIDEO_MODE", "webrtc").strip().lower() or "webrtc"
+
 # Детекция: только локальный Python/OpenCV (Haar/HOG), без токенов
 # Интервал проверки человека (сек), пауза после движения (сек)
 PERSON_INTERVAL = float(os.environ.get("PERSON_INTERVAL", "8"))
@@ -91,6 +102,12 @@ WAKE_WORD_ENABLED = os.environ.get("WAKE_WORD_ENABLED", "false").lower() == "tru
 WAKE_WORD_PHRASE = os.environ.get("WAKE_WORD_PHRASE", "Hello Kitty").strip() or "Hello Kitty"
 WAKE_WORD_CHUNK_SEC = float(os.environ.get("WAKE_WORD_CHUNK_SEC", "2.0"))
 WAKE_WORD_COOLDOWN = float(os.environ.get("WAKE_WORD_COOLDOWN", "6.0"))
+WAKE_WORD_MATCH_THRESHOLD = float(os.environ.get("WAKE_WORD_MATCH_THRESHOLD", "0.72"))
+WAKE_WORD_ALIASES = [
+    item.strip()
+    for item in re.split(r"[,\n;]+", os.environ.get("WAKE_WORD_ALIASES", "Kitty,Hello Katie,Hey Kitty,Hi Kitty"))
+    if item.strip()
+]
 WAKE_WORD_MODEL_DIR = os.environ.get(
     "WAKE_WORD_MODEL_DIR",
     str(BASE_DIR / "data" / "vosk-model-small-en-us-0.15"),

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Локальное wake word распознавание через Vosk."""
 
+import difflib
 import json
 import os
 import pwd
@@ -18,8 +19,10 @@ from config import (
     AUDIO_DEVICE,
     WAKE_WORD_CHUNK_SEC,
     WAKE_WORD_COOLDOWN,
+    WAKE_WORD_MATCH_THRESHOLD,
     WAKE_WORD_MODEL_DIR,
     WAKE_WORD_PHRASE,
+    WAKE_WORD_ALIASES,
 )
 
 try:
@@ -144,15 +147,18 @@ class WakeWordListener:
         self,
         callback=None,
         phrase: str = WAKE_WORD_PHRASE,
+        aliases: list[str] | None = None,
         model_dir: str | Path = WAKE_WORD_MODEL_DIR,
         chunk_sec: float = WAKE_WORD_CHUNK_SEC,
         cooldown_sec: float = WAKE_WORD_COOLDOWN,
     ):
         self.callback = callback
         self.phrase = (phrase or "Hello Kitty").strip()
+        self.aliases = [a.strip() for a in (aliases or WAKE_WORD_ALIASES) if (a or "").strip()]
         self.model_dir = Path(model_dir)
         self.chunk_sec = max(1.0, float(chunk_sec))
         self.cooldown_sec = max(2.0, float(cooldown_sec))
+        self.match_threshold = max(0.5, min(0.95, float(WAKE_WORD_MATCH_THRESHOLD)))
         self._running = False
         self._paused = False
         self._thread = None
@@ -178,19 +184,47 @@ class WakeWordListener:
 
     def _matches(self, text: str) -> bool:
         heard = self._normalize(text)
-        phrase = self._normalize(self.phrase)
-        if not phrase:
+        variants = self._candidate_phrases()
+        if not variants:
             return False
         if not heard or heard == "[unk]":
             return False
-        if phrase in heard or heard == phrase:
-            return True
-        if phrase.replace(" ", "") in heard.replace(" ", ""):
-            return True
-        # Короткие триггеры: "kitty" или "hello" при phrase "hello kitty"
-        if "hello kitty" in phrase and (heard == "kitty" or heard == "hello"):
-            return True
+        heard_joined = heard.replace(" ", "")
+        heard_tokens = set(heard.split())
+        for phrase in variants:
+            phrase_joined = phrase.replace(" ", "")
+            if phrase in heard or heard == phrase:
+                return True
+            if phrase_joined and phrase_joined in heard_joined:
+                return True
+            phrase_tokens = set(phrase.split())
+            if phrase_tokens and heard_tokens == phrase_tokens:
+                return True
+            if len(heard_tokens & phrase_tokens) == len(phrase_tokens) and phrase_tokens:
+                return True
+            score = difflib.SequenceMatcher(None, heard, phrase).ratio()
+            if score >= self.match_threshold:
+                _log(f"fuzzy match: heard='{heard}' target='{phrase}' score={score:.2f}")
+                return True
         return False
+
+    def _candidate_phrases(self) -> list[str]:
+        values = [self.phrase, *self.aliases]
+        normalized = []
+        for value in values:
+            text = self._normalize(value)
+            if not text:
+                continue
+            normalized.append(text)
+            if "kitty" in text:
+                normalized.append(text.replace("kitty", "katie"))
+            if "katie" in text:
+                normalized.append(text.replace("katie", "kitty"))
+            parts = text.split()
+            if len(parts) > 1:
+                normalized.extend(parts)
+                normalized.append(parts[-1])
+        return list(dict.fromkeys(item for item in normalized if item and item != "[unk]"))
 
     def _record_chunk(self) -> Path | None:
         global _pw_record_unavailable
@@ -279,14 +313,10 @@ class WakeWordListener:
         return "громко"
 
     def _get_grammar_phrases(self) -> list[str]:
-        """Фразы для Vosk: основная + короткие варианты (kitty, hello) + [unk]."""
-        p = self._normalize(self.phrase)
-        phrases = [p, "[unk]"]
-        if "kitty" in p and p != "kitty":
-            phrases.insert(1, "kitty")
-        if "hello" in p and p != "hello":
-            phrases.insert(1, "hello")
-        return list(dict.fromkeys(phrases))  # без дубликатов
+        """Фразы для Vosk: основная, алиасы, короткие варианты и [unk]."""
+        phrases = self._candidate_phrases()
+        phrases.append("[unk]")
+        return list(dict.fromkeys(phrases))
 
     def _transcribe_chunk(self, audio_path: Path) -> str:
         self._ensure_model()
@@ -313,7 +343,7 @@ class WakeWordListener:
     def _run_loop(self):
         _log(
             f"фоновое слово включено: phrase='{self.phrase}', "
-            f"backend={self._backend}, chunk={self.chunk_sec:.1f}s"
+            f"aliases={self.aliases}, backend={self._backend}, chunk={self.chunk_sec:.1f}s"
         )
         while self._running:
             if self._paused:

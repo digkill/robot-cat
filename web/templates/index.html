@@ -26,6 +26,45 @@
     </section>
 
     <section class="card">
+      <h2>🎭 Лицо робота</h2>
+      <div class="face-panel">
+        <div class="face-grid">
+          <label>Эмоция
+            <select id="faceEmotion"></select>
+          </label>
+          <label>Тема
+            <select id="faceTheme"></select>
+          </label>
+          <label>Анимация
+            <select id="faceAnimation"></select>
+          </label>
+          <label>Фон
+            <select id="faceBackground"></select>
+          </label>
+        </div>
+        <div class="face-actions">
+          <input id="backgroundUpload" type="file" accept="image/*,video/*" />
+          <button id="faceApplyBtn">Применить</button>
+          <button id="faceRefreshBtn">Обновить</button>
+          <span id="faceStatus"></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>🔊 Звук робота</h2>
+      <div class="audio-panel">
+        <label class="audio-label" for="volumeSlider">Громкость</label>
+        <input id="volumeSlider" type="range" min="0" max="100" step="1" value="100" />
+        <div class="audio-controls">
+          <span id="volumeValue">100%</span>
+          <button id="muteToggleBtn">Mute</button>
+          <span id="audioStatus"></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
       <h2>📋 События <span id="stateBadge"></span></h2>
       <div id="events" class="events-list"></div>
       <button onclick="loadEvents()">Обновить</button>

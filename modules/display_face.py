@@ -5,7 +5,12 @@ import math
 import time
 import threading
 import random
+from pathlib import Path
+
+import cv2
+from PIL import Image
 from gc9a01 import GC9A01, WIDTH, HEIGHT
+from config import MEDIA_DIR
 
 CX, CY = 120, 115
 FACE_X0, FACE_Y0 = 36, 44
@@ -24,6 +29,19 @@ COLOR_RED = rgb(255, 90, 90)
 COLOR_GOLD = rgb(255, 210, 90)
 COLOR_LAVENDER = rgb(210, 160, 255)
 COLOR_SOFT_BLUE = rgb(140, 190, 255)
+
+THEME_PRESETS = {
+    "classic": {"bg": rgb(5, 5, 8), "blush": COLOR_PINK},
+    "sunset": {"bg": rgb(30, 9, 12), "blush": rgb(255, 150, 120)},
+    "forest": {"bg": rgb(6, 20, 11), "blush": rgb(140, 220, 180)},
+    "ocean": {"bg": rgb(4, 12, 24), "blush": rgb(130, 190, 255)},
+}
+
+ANIMATION_PRESETS = {
+    "idle": {"speak_speed": 0.20, "idle_sleep": 0.11, "speak_sleep": 0.07, "blink": (4.5, 9.0)},
+    "calm": {"speak_speed": 0.15, "idle_sleep": 0.14, "speak_sleep": 0.09, "blink": (6.0, 11.0)},
+    "energetic": {"speak_speed": 0.28, "idle_sleep": 0.08, "speak_sleep": 0.05, "blink": (3.0, 6.0)},
+}
 
 EMOTION_PRESETS = {
     "веселый": {
@@ -340,12 +358,25 @@ def draw_blush(disp, cx, cy, color):
     fill_ellipse(disp, cx + 38, cy + 20, 8, 4, color)
 
 
-def draw_face(disp, blink_ratio=1.0, mouth_ratio=0.0, breath=0.0, whisker_spread=0.0, ear_perk=0.0, emotion="радостный"):
+def draw_face(
+    disp,
+    blink_ratio=1.0,
+    mouth_ratio=0.0,
+    breath=0.0,
+    whisker_spread=0.0,
+    ear_perk=0.0,
+    emotion="радостный",
+    theme="classic",
+    background_frame=None,
+):
     """Рисует лицо кота с живым idle-состоянием."""
     profile = EMOTION_PRESETS.get(emotion, EMOTION_PRESETS["радостный"])
+    theme_profile = THEME_PRESETS.get(theme, THEME_PRESETS["classic"])
     accent_color = profile["accent"]
     iris_color = profile["iris"]
-    canvas = FaceCanvas(FACE_X0, FACE_Y0, FACE_W, FACE_H, COLOR_BG)
+    canvas = FaceCanvas(FACE_X0, FACE_Y0, FACE_W, FACE_H, theme_profile["bg"])
+    if background_frame and len(background_frame) == len(canvas.buffer):
+        canvas.buffer[:] = background_frame
     breath = max(0.0, min(1.0, breath))
     face_bob = int(round((breath - 0.5) * 3.0))
     eye_cx_l, eye_cx_r = CX - 38, CX + 38
@@ -382,7 +413,7 @@ def draw_face(disp, blink_ratio=1.0, mouth_ratio=0.0, breath=0.0, whisker_spread
     draw_mouth(canvas, CX, CY + 40 + face_bob, mouth_ratio, accent_color, iris_color, profile.get("mouth", "smile"))
     draw_whiskers(canvas, CX, CY + 40 + face_bob, accent_color, whisker_spread, profile.get("whisker_bias", 0.0))
     if profile.get("blush"):
-        draw_blush(canvas, CX, CY + face_bob, COLOR_PINK)
+        draw_blush(canvas, CX, CY + face_bob, theme_profile["blush"])
     if profile.get("sparkles"):
         draw_sparkle(canvas, CX - 58, CY - 38 + face_bob, 3, accent_color)
         draw_sparkle(canvas, CX + 58, CY - 44 + face_bob, 3, accent_color)
@@ -400,6 +431,14 @@ class FaceAnimator:
         self._whisker_spread = 0.15
         self._ear_perk = 0.0
         self._emotion = "радостный"
+        self._theme = "classic"
+        self._animation_mode = "idle"
+        self._background_name = None
+        self._background_kind = "none"
+        self._background_image = None
+        self._background_video = None
+        self._background_video_frame = None
+        self._background_video_ts = 0.0
         self._last_frame_key = None
         self._speaking = False
         self._running = True
@@ -414,6 +453,99 @@ class FaceAnimator:
         else:
             self._emotion = "радостный"
 
+    def set_theme(self, theme: str):
+        self._theme = theme if theme in THEME_PRESETS else "classic"
+        self._last_frame_key = None
+
+    def set_animation_mode(self, mode: str):
+        self._animation_mode = mode if mode in ANIMATION_PRESETS else "idle"
+
+    def get_state(self):
+        return {
+            "emotion": self._emotion,
+            "theme": self._theme,
+            "animation_mode": self._animation_mode,
+            "background_name": self._background_name,
+            "background_kind": self._background_kind,
+            "speaking": self._speaking,
+        }
+
+    def get_options(self):
+        return {
+            "emotions": sorted(EMOTION_PRESETS.keys()),
+            "themes": sorted(THEME_PRESETS.keys()),
+            "animations": sorted(ANIMATION_PRESETS.keys()),
+        }
+
+    def clear_background(self):
+        if self._background_video:
+            try:
+                self._background_video.release()
+            except Exception:
+                pass
+        self._background_name = None
+        self._background_kind = "none"
+        self._background_image = None
+        self._background_video = None
+        self._background_video_frame = None
+        self._background_video_ts = 0.0
+        self._last_frame_key = None
+
+    def set_background(self, name: str | None):
+        if not name:
+            self.clear_background()
+            return
+        path = MEDIA_DIR / name
+        if not path.exists():
+            raise FileNotFoundError(path)
+        self.clear_background()
+        ext = path.suffix.lower()
+        if ext in {".jpg", ".jpeg", ".png", ".bmp", ".webp"}:
+            self._background_image = self._load_image(path)
+            self._background_kind = "image"
+        elif ext in {".mp4", ".mov", ".avi", ".mkv", ".webm"}:
+            cap = cv2.VideoCapture(str(path))
+            if not cap.isOpened():
+                raise RuntimeError(f"Не удалось открыть видео: {path.name}")
+            self._background_video = cap
+            self._background_kind = "video"
+        else:
+            raise RuntimeError(f"Неподдерживаемый формат: {path.suffix}")
+        self._background_name = path.name
+        self._last_frame_key = None
+
+    def _load_image(self, path: Path):
+        image = Image.open(path).convert("RGB").resize((FACE_W, FACE_H))
+        buf = bytearray()
+        for r, g, b in image.getdata():
+            color = rgb(r, g, b)
+            buf.extend(((color >> 8) & 0xFF, color & 0xFF))
+        return bytes(buf)
+
+    def _get_background_frame(self):
+        if self._background_kind == "image":
+            return self._background_image
+        if self._background_kind != "video" or not self._background_video:
+            return None
+        now = time.monotonic()
+        if self._background_video_frame is not None and now - self._background_video_ts < (1 / 12):
+            return self._background_video_frame
+        ok, frame = self._background_video.read()
+        if not ok:
+            self._background_video.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            ok, frame = self._background_video.read()
+        if not ok:
+            return self._background_video_frame
+        frame = cv2.resize(frame, (FACE_W, FACE_H))
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        buf = bytearray()
+        for r, g, b in frame.reshape(-1, 3):
+            color = rgb(int(r), int(g), int(b))
+            buf.extend(((color >> 8) & 0xFF, color & 0xFF))
+        self._background_video_frame = bytes(buf)
+        self._background_video_ts = now
+        return self._background_video_frame
+
     def _draw(self, force=False):
         frame_key = (
             round(self._blink_ratio * 20),
@@ -422,6 +554,10 @@ class FaceAnimator:
             round(self._whisker_spread * 10),
             round(self._ear_perk * 10),
             self._emotion,
+            self._theme,
+            self._animation_mode,
+            self._background_name,
+            int(time.monotonic() * 8) if self._background_kind == "video" else self._background_kind,
         )
         if not force and frame_key == self._last_frame_key:
             return
@@ -433,6 +569,8 @@ class FaceAnimator:
             self._whisker_spread,
             self._ear_perk,
             self._emotion,
+            self._theme,
+            self._get_background_frame(),
         )
         self._last_frame_key = frame_key
 
@@ -459,10 +597,11 @@ class FaceAnimator:
         mouth_phase = 0
         breath_phase = random.uniform(0.0, math.tau)
         while self._running:
+            anim = ANIMATION_PRESETS.get(self._animation_mode, ANIMATION_PRESETS["idle"])
             now = time.monotonic()
             if now >= next_blink:
                 self._run_blink()
-                next_blink = time.monotonic() + random.uniform(4.5, 9.0)
+                next_blink = time.monotonic() + random.uniform(*anim["blink"])
                 if random.random() < 0.18 and self._running:
                     time.sleep(0.08)
                     self._run_blink()
@@ -476,7 +615,7 @@ class FaceAnimator:
             self._breath = 0.5 + 0.5 * math.sin(breath_phase)
 
             if self._speaking:
-                mouth_phase += 0.2
+                mouth_phase += anim["speak_speed"]
                 self._mouth_ratio = 0.20 + 0.45 * (0.5 + 0.5 * math.sin(mouth_phase * 1.7))
                 self._mouth_ratio += 0.10 * (0.5 + 0.5 * math.sin(mouth_phase * 0.63))
                 self._whisker_spread = 0.45 + 0.35 * (0.5 + 0.5 * math.sin(mouth_phase * 1.1))
@@ -488,7 +627,7 @@ class FaceAnimator:
 
             self._ear_perk *= 0.82
             self._draw()
-            time.sleep(0.07 if self._speaking else 0.11)
+            time.sleep(anim["speak_sleep"] if self._speaking else anim["idle_sleep"])
 
     def start(self):
         self._draw(force=True)
@@ -501,6 +640,7 @@ class FaceAnimator:
 
     def stop(self):
         self._running = False
+        self.clear_background()
         if self._thread and self._thread.is_alive() and threading.current_thread() is not self._thread:
             try:
                 self._thread.join(timeout=1.5)
