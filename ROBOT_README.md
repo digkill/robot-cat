@@ -46,6 +46,11 @@ python3 web_app.py
 
 Документ протокола: `REMOTE_BACKEND.md`
 
+## Git workflow
+
+Для веток и релизов используйте схему `main / develop / feature / release / hotfix`.
+Правила описаны в `GIT_WORKFLOW.md`.
+
 ## Подключение GPIO
 
 См. **GPIO_WIRING.md** для полной распиновки.
