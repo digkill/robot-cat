@@ -133,9 +133,12 @@ class PersonMotionDetector:
 
     def _run_loop(self):
         while self._running:
+            if not self._camera_service.is_available():
+                time.sleep(2.0)
+                continue
             frame = self._camera_service.get_frame(wait_timeout=1.0)
             if frame is None:
-                time.sleep(0.1)
+                time.sleep(0.5)
                 continue
             now = time.time()
             person_found = False
@@ -184,10 +187,13 @@ class PersonMotionDetector:
             time.sleep(0.5)
 
     def start(self):
-        self._camera_service.start()
+        camera_ok = self._camera_service.start()
         try:
             from modules.watchlog import log
-            log("camera", "инициализирована через общий сервис камеры")
+            if camera_ok:
+                log("camera", "инициализирована через общий сервис камеры")
+            else:
+                log("camera", "камера недоступна — детекция отключена, остальной функционал работает")
             if self._face_cascade is None:
                 log("detection", "Haar cascade не загружен — только HOG (тело)")
             else:
@@ -224,7 +230,7 @@ class PersonMotionDetector:
     def resume(self):
         """Возобновить детекцию после паузы."""
         time.sleep(0.2)
-        self._camera_service.start()
+        self._camera_service.start()  # без камеры вернёт False — цикл детекции ждёт is_available
         self._running = True
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
         self._thread.start()

@@ -53,6 +53,7 @@ class CameraService:
         self._running = False
         self._thread = None
         self._lock = threading.Lock()
+        self._capture_ticks = 0
         self._frame_ready = threading.Condition(self._lock)
         self._latest_frame = None
         self._latest_jpeg = None
@@ -117,6 +118,11 @@ class CameraService:
 
     def _capture_loop(self):
         delay = 1.0 / max(1.0, CAMERA_FPS)
+        # На системах с ~512 МБ ОЗУ периодический gc снижает раздувание кучи от numpy/cv2.
+        try:
+            import gc
+        except ImportError:
+            gc = None
         while self._running:
             frame = self._read_frame()
             if frame is None:
@@ -135,18 +141,30 @@ class CameraService:
                     recording["frames"] += 1
                 except Exception as e:
                     _log("recording", f"ошибка записи кадра: {e}")
+            self._capture_ticks += 1
+            if gc is not None and self._capture_ticks % 120 == 0:
+                gc.collect(0)
             time.sleep(delay)
 
-    def start(self):
+    def is_available(self) -> bool:
+        """Камера открыта и поток захвата работает."""
+        with self._lock:
+            return bool(self._running and self._cam is not None)
+
+    def start(self) -> bool:
+        """Запустить захват. При отсутствии камеры возвращает False, исключение не бросает."""
         with self._lock:
             if self._running:
-                return
+                return True
             if not self._init_camera():
-                raise RuntimeError("Камера недоступна")
+                _log("camera", "камера недоступна — захват не запущен")
+                return False
             self._running = True
+            self._capture_ticks = 0
             self._thread = threading.Thread(target=self._capture_loop, daemon=True, name="camera-service")
             self._thread.start()
         _log("camera", f"сервис камеры запущен ({'picamera2' if self._use_picam else 'opencv'})")
+        return True
 
     def stop(self):
         with self._lock:
@@ -171,6 +189,7 @@ class CameraService:
         self._cam = None
         self._latest_frame = None
         self._latest_jpeg = None
+        self._capture_ticks = 0
 
     def get_frame(self, wait_timeout: float = 1.0):
         with self._frame_ready:
@@ -197,11 +216,13 @@ class CameraService:
 
     def recording_status(self):
         with self._lock:
+            available = bool(self._running and self._cam is not None)
             if not self._recording:
-                return {"recording": False}
+                return {"recording": False, "available": available}
             rec = self._recording
             return {
                 "recording": True,
+                "available": available,
                 "started_at": rec["started_at"],
                 "video_name": Path(rec["final_path"]).name,
                 "frames": rec["frames"],
@@ -225,7 +246,8 @@ class CameraService:
         return None
 
     def start_recording(self):
-        self.start()
+        if not self.start():
+            raise RuntimeError("Камера недоступна — запись невозможна")
         with self._lock:
             if self._recording:
                 raise RuntimeError("Запись уже идёт")

@@ -7,6 +7,7 @@ import os
 from config import (
     LLM_CONSOLE_URL,
     LLM_API_URL,
+    OPENAI_BASE_URL,
     LLM_API_KEY,
     LLM_MODEL,
     PROXY_URL,
@@ -162,10 +163,11 @@ def _persona_prompt(task: str) -> str:
 
 
 def _http_session():
-    """Сессия с прокси и retry."""
+    """Сессия с прокси и retry. Запросы к LLM_API_URL идут через PROXY_URL."""
     session = requests.Session()
     if PROXY_URL:
         session.proxies = {"http": PROXY_URL, "https": PROXY_URL}
+        session.trust_env = False
     retry = Retry(total=HTTP_RETRIES, backoff_factor=0.6)
     session.mount("https://", HTTPAdapter(max_retries=retry))
     session.mount("http://", HTTPAdapter(max_retries=retry))
@@ -173,14 +175,19 @@ def _http_session():
 
 
 def _openai_client():
-    """Клиент OpenAI с прокси SOCKS5."""
+    """Клиент OpenAI: base_url согласован с LLM_API_URL, HTTPS через PROXY_URL (socks5h — в httpx[socks])."""
     if not HAS_OPENAI or not LLM_API_KEY:
         return None
-    kwargs = {"api_key": LLM_API_KEY}
+    kwargs = {"api_key": LLM_API_KEY, "base_url": OPENAI_BASE_URL}
     if PROXY_URL:
         try:
             import httpx
-            kwargs["http_client"] = httpx.Client(proxy=PROXY_URL, timeout=float(HTTP_TIMEOUT))
+
+            kwargs["http_client"] = httpx.Client(
+                proxy=PROXY_URL,
+                timeout=float(HTTP_TIMEOUT),
+                trust_env=False,
+            )
         except Exception:
             os.environ["HTTP_PROXY"] = PROXY_URL
             os.environ["HTTPS_PROXY"] = PROXY_URL

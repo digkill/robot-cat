@@ -24,6 +24,7 @@ try:
         TTS_OPENAI_MODEL,
         TTS_OPENAI_VOICE,
         LLM_API_KEY,
+        OPENAI_BASE_URL,
         PROXY_URL,
         HTTP_TIMEOUT,
     )
@@ -39,6 +40,7 @@ except ImportError:
     TTS_OPENAI_MODEL = "gpt-4o-mini-tts"
     TTS_OPENAI_VOICE = "alloy"
     LLM_API_KEY = ""
+    OPENAI_BASE_URL = "https://api.openai.com/v1"
     PROXY_URL = ""
     HTTP_TIMEOUT = 30
 
@@ -204,11 +206,15 @@ def _openai_client():
     """Клиент OpenAI для TTS с поддержкой прокси."""
     if not HAS_OPENAI or not LLM_API_KEY:
         return None
-    kwargs = {"api_key": LLM_API_KEY}
+    kwargs = {"api_key": LLM_API_KEY, "base_url": OPENAI_BASE_URL}
     if PROXY_URL:
         try:
             import httpx
-            kwargs["http_client"] = httpx.Client(proxy=PROXY_URL, timeout=float(HTTP_TIMEOUT))
+            kwargs["http_client"] = httpx.Client(
+                proxy=PROXY_URL,
+                timeout=float(HTTP_TIMEOUT),
+                trust_env=False,
+            )
         except Exception:
             os.environ["HTTP_PROXY"] = PROXY_URL
             os.environ["HTTPS_PROXY"] = PROXY_URL

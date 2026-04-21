@@ -154,25 +154,28 @@ class GC9A01:
         """
         Залить весь экран цветом.
         color: 16-bit RGB565 (например 0xFFFF — белый, 0x0000 — чёрный).
+        Одна строка в байтах — без огромного списка на весь кадр (экономия ОЗУ на Pi).
         """
-        buf = [(color >> 8) & 0xFF, color & 0xFF] * (WIDTH * HEIGHT)
+        hi = (color >> 8) & 0xFF
+        lo = color & 0xFF
+        line = bytes([hi, lo]) * WIDTH
         self.set_window(0, 0, WIDTH - 1, HEIGHT - 1)
         self._start_ram_write()
-        chunk = 4096
-        for i in range(0, len(buf), chunk):
-            self._write_pixels(buf[i:i + chunk])
+        for _ in range(HEIGHT):
+            self._write_pixels(line)
         self._end_ram_write()
 
     def fill_rect(self, x, y, w, h, color):
         """Залить прямоугольник цветом RGB565."""
         if x < 0 or y < 0 or x + w > WIDTH or y + h > HEIGHT:
             return
-        buf = [(color >> 8) & 0xFF, color & 0xFF] * (w * h)
+        hi = (color >> 8) & 0xFF
+        lo = color & 0xFF
+        line = bytes([hi, lo]) * w
         self.set_window(x, y, x + w - 1, y + h - 1)
         self._start_ram_write()
-        chunk = 4096
-        for i in range(0, len(buf), chunk):
-            self._write_pixels(buf[i:i + chunk])
+        for _ in range(h):
+            self._write_pixels(line)
         self._end_ram_write()
 
     def blit_buffer(self, x, y, w, h, data):

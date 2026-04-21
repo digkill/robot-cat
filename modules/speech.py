@@ -9,7 +9,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from config import RECORDINGS_DIR, LLM_API_KEY, PROXY_URL, HTTP_TIMEOUT, AUDIO_DEVICE
+from config import RECORDINGS_DIR, LLM_API_KEY, OPENAI_BASE_URL, PROXY_URL, HTTP_TIMEOUT, AUDIO_DEVICE
 
 try:
     from openai import OpenAI
@@ -178,11 +178,15 @@ def transcribe(audio_path: Path) -> str:
         return ""
     try:
         if HAS_OPENAI:
-            kwargs = {"api_key": LLM_API_KEY}
+            kwargs = {"api_key": LLM_API_KEY, "base_url": OPENAI_BASE_URL}
             if PROXY_URL:
                 try:
                     import httpx
-                    kwargs["http_client"] = httpx.Client(proxy=PROXY_URL, timeout=float(HTTP_TIMEOUT))
+                    kwargs["http_client"] = httpx.Client(
+                        proxy=PROXY_URL,
+                        timeout=float(HTTP_TIMEOUT),
+                        trust_env=False,
+                    )
                 except Exception:
                     os.environ["HTTP_PROXY"] = PROXY_URL
                     os.environ["HTTPS_PROXY"] = PROXY_URL
@@ -191,7 +195,7 @@ def transcribe(audio_path: Path) -> str:
                 r = client.audio.transcriptions.create(model="whisper-1", file=f, language="ru")
             return (r.text or "").strip()
         if HAS_REQUESTS:
-            url = "https://api.openai.com/v1/audio/transcriptions"
+            url = OPENAI_BASE_URL.rstrip("/") + "/audio/transcriptions"
             headers = {"Authorization": f"Bearer {LLM_API_KEY}"}
             with open(audio_path, "rb") as f:
                 files = {"file": (audio_path.name, f, "audio/wav")}
@@ -199,6 +203,7 @@ def transcribe(audio_path: Path) -> str:
                 session = requests.Session()
                 if PROXY_URL:
                     session.proxies = {"http": PROXY_URL, "https": PROXY_URL}
+                    session.trust_env = False
                 r = session.post(url, headers=headers, files=files, data=data, timeout=HTTP_TIMEOUT)
             r.raise_for_status()
             out = r.json()

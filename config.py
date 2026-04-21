@@ -28,7 +28,22 @@ LLM_API_URL = os.environ.get("LLM_API_URL", "https://api.openai.com/v1/chat/comp
 LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
 LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-4o-mini")
 
-# Прокси для LLM (SOCKS5 с DNS: socks5h://user:pass@host:port)
+
+def _openai_base_url_from_chat_url(chat_url: str) -> str:
+    """Из URL .../v1/chat/completions получить базу .../v1 для официального SDK."""
+    u = (chat_url or "").strip().rstrip("/")
+    if "/chat/completions" in u:
+        u = u.split("/chat/completions", 1)[0].rstrip("/")
+    return u or "https://api.openai.com/v1"
+
+
+# База API OpenAI (чат/Whisper/TTS в SDK идут относительно неё). Переопределение: OPENAI_BASE_URL в .env
+OPENAI_BASE_URL = (os.environ.get("OPENAI_BASE_URL") or "").strip() or _openai_base_url_from_chat_url(
+    os.environ.get("LLM_API_URL", "https://api.openai.com/v1/chat/completions")
+)
+
+# Прокси для OpenAI/Whisper/TTS (SOCKS5 с DNS через прокси: socks5h://user:pass@host:port).
+# Символы в пароле кодируйте: % -> %25, @ -> %40 (пример пароля %pwd@ -> %25pwd%40).
 PROXY_URL = os.environ.get("PROXY_URL", "")
 HTTP_TIMEOUT = int(os.environ.get("HTTP_TIMEOUT", "30"))
 HTTP_RETRIES = int(os.environ.get("HTTP_RETRIES", "2"))
@@ -56,6 +71,7 @@ DISPLAY_BACKLIGHT_PIN = int(_backlight_pin) if _backlight_pin else None
 BUTTON_ACTIVE_LOW = os.environ.get("BUTTON_ACTIVE_LOW", "true").lower() == "true"
 
 # Камера для детекции: opencv (V4L2) или picamera2 (CSI)
+# На системах с ~512 МБ ОЗУ задайте меньше разрешение, например: CAMERA_WIDTH=320 CAMERA_HEIGHT=240
 CAMERA_DETECTION = os.environ.get("CAMERA_DETECTION", "opencv")
 CAMERA_INDEX = int(os.environ.get("CAMERA_INDEX", "0"))
 CAMERA_ROTATE_180 = os.environ.get("CAMERA_ROTATE_180", "true").lower() == "true"
@@ -64,6 +80,8 @@ CAMERA_HEIGHT = int(os.environ.get("CAMERA_HEIGHT", "480"))
 CAMERA_FPS = float(os.environ.get("CAMERA_FPS", "15"))
 CAMERA_JPEG_QUALITY = int(os.environ.get("CAMERA_JPEG_QUALITY", "80"))
 
+# Веб-интерфейс и MJPEG /camera/stream. Для доступа с других ПК и из интернета нужен WEB_HOST=0.0.0.0
+# (все интерфейсы). WEB_HOST=127.0.0.1 — только с самой Raspberry Pi.
 WEB_HOST = os.environ.get("WEB_HOST", "0.0.0.0").strip() or "0.0.0.0"
 WEB_PORT = int(os.environ.get("WEB_PORT", "5000"))
 WEB_AUTO_START = os.environ.get("WEB_AUTO_START", "true").lower() == "true"

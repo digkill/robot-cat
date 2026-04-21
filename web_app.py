@@ -7,6 +7,7 @@
 
 import json
 import os
+import socket
 import threading
 from pathlib import Path
 from datetime import datetime
@@ -80,10 +81,8 @@ def api_recordings():
 
 @app.route("/camera/stream")
 def camera_stream():
-    try:
-        _camera_service.start()
-    except Exception as e:
-        return jsonify({"error": str(e)}), 503
+    if not _camera_service.start():
+        return jsonify({"error": "Камера недоступна"}), 503
 
     def generate():
         for jpeg in _camera_service.iter_jpeg():
@@ -288,6 +287,32 @@ def api_assistant():
         return jsonify({"error": str(e)}), 500
 
 
+def default_route_ipv4() -> str | None:
+    """IP интерфейса по умолчанию (для подсказки URL, если bind 0.0.0.0)."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(0.3)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        if ip and not ip.startswith("127."):
+            return ip
+    except Exception:
+        pass
+    return None
+
+
+def web_client_base_url(host: str, port: int) -> str:
+    """URL для браузера: при bind на все адреса подставляем LAN-IP вместо 0.0.0.0."""
+    h = (host or "").strip()
+    if h not in ("0.0.0.0", "", "::", "0"):
+        return f"http://{h}:{port}"
+    ip = default_route_ipv4()
+    if ip:
+        return f"http://{ip}:{port}"
+    return f"http://<ip-этой-машины>:{port}"
+
+
 def run_web(host=WEB_HOST, port=WEB_PORT):
     Path("web/templates").mkdir(parents=True, exist_ok=True)
     Path("web/static").mkdir(parents=True, exist_ok=True)
@@ -295,4 +320,5 @@ def run_web(host=WEB_HOST, port=WEB_PORT):
 
 
 if __name__ == "__main__":
+    print(f"Веб-интерфейс: {web_client_base_url(WEB_HOST, WEB_PORT)}  (слушаем {WEB_HOST}:{WEB_PORT})")
     run_web()

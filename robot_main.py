@@ -394,7 +394,7 @@ class Robot:
     def _start_web_server(self):
         if not self._start_web or self._web_thread:
             return
-        from web_app import run_web, set_robot
+        from web_app import run_web, set_robot, web_client_base_url
 
         set_robot(self)
         self._web_thread = threading.Thread(
@@ -404,7 +404,19 @@ class Robot:
             name="robot-web",
         )
         self._web_thread.start()
-        log("web", f"веб-интерфейс: http://{WEB_HOST}:{WEB_PORT}")
+        hint = web_client_base_url(WEB_HOST, WEB_PORT)
+        log("web", f"веб-интерфейс: {hint} (bind {WEB_HOST}:{WEB_PORT})")
+        if WEB_HOST in ("127.0.0.1", "::1") or (WEB_HOST or "").lower() == "localhost":
+            log(
+                "web",
+                "удалённый доступ выключен: в .env задайте WEB_HOST=0.0.0.0 и откройте порт в файрволе",
+            )
+        else:
+            log(
+                "web",
+                "доступ из интернета: проброс TCP на этот порт в роутере + при необходимости sudo ufw allow "
+                f"{WEB_PORT}/tcp",
+            )
 
     def get_runtime_status(self):
         return {
@@ -414,6 +426,7 @@ class Robot:
             "face_options": self.face.get_options() if self.face else {},
             "audio": get_audio_status(),
             "camera": self.camera_service.recording_status(),
+            "camera_available": self.camera_service.is_available(),
             "wake_word_enabled": WAKE_WORD_ENABLED,
             "wake_word_phrase": WAKE_WORD_PHRASE,
         }
